@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Write Obsidian note content atomically, receiving all content on stdin."""
+import json
+import os
+import stat
+import sys
+import tempfile
+
+MAX_CONTENT_BYTES = 2 * 1024 * 1024
+MAX_PATH_CHARS = 4096
+
+
+def emit(ok, error=""):
+    print(json.dumps({"ok": bool(ok), "error": str(error)}, ensure_ascii=True, separators=(",", ":")), flush=True)
+
+
+def write_note(argv):
+    if len(argv) != 1:
+        emit(False, "An absolute note path is required.")
+        return 2
+    path = str(argv[0])
+    if not path or len(path) > MAX_PATH_CHARS or "\x00" in path or not os.path.isabs(path):
+        emit(False, "The note path is invalid.")
+        return 2
+    content = sys.stdin.buffer.read(MAX_CONTENT_BYTES + 1)
+    if len(content) > MAX_CONTENT_BYTES:
+        emit(False, "The note content exceeds the 2 MiB limit.")
+        return 2
+
+    parent = os.path.dirname(path) or "/"
+    name = os.path.basename(path)
+    if not name or name in (".", ".."):
+        emit(False, "The note path is invalid.")
+        return 2
+
+    temporary_path = ""
+    try:
+        os.makedirs(parent, exist_ok=True)
+        try:
+            current = os.lstat(path)
+            if stat.S_ISLNK(current.st_mode) or not stat.S_ISREG(current.st_mode):
+                raise OSError("The target is not a regular file.")
+            mode = stat.S_IMODE(current.st_mode)
+        except FileNotFoundError:
+            mode = 0o600
+
+        descriptor, temporary_path = tempfile.mkstemp(prefix="." + name + ".kairos-", dir=parent)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fchmod(stream.fileno(), mode)
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+        temporary_path = ""
+        directory_fd = os.open(parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except OSError:
+        if temporary_path:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
+        emit(False, "Could not atomically save the daily note.")
+        return 1
+
+    emit(True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(write_note(sys.argv[1:]))

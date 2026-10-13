@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.yks777.kairos",
+  "name": "Kairos",
+  "version": "1.0.0",
+  "author": "Yuri K. S.",
+  "license": "MIT",
+  "description": "Clock, focus timer, tasks, calendar, Obsidian daily notes, stats, markets, social and email for the Omarchy bar.",
+  "kinds": ["service", "bar-widget"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.clock"
+  },
+  "barWidget": {
+    "displayName": "Kairos",
+    "description": "Clock with focus timer, calendar and daily productivity",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

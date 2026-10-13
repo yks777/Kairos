@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+import sys
+import time
+import urllib.parse
+
+from _secure_fetch import SafeFetchError, emit, fetch_json, now_ms, read_cache, write_cache
+
+CACHE_NAME = "rates-USD.json"
+TTL_MS = 6 * 60 * 60 * 1000
+
+
+def validated_rates(value):
+    if not isinstance(value, dict) or not value or len(value) > 300:
+        return None
+    output = {"USD": 1.0}
+    for code, rate in value.items():
+        currency = str(code).upper()
+        if len(currency) != 3 or not currency.isalpha():
+            continue
+        if isinstance(rate, bool):
+            continue
+        try:
+            number = float(rate)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if number <= 0 or number > 1e12 or number != number or number == float("inf"):
+            continue
+        output[currency] = number
+        if len(output) > 300:
+            return None
+    return output if len(output) > 1 else None
+
+
+def valid_cache(data):
+    if not isinstance(data, dict) or type(data.get("version")) is not int or data.get("version") != 1:
+        return None
+    fetched_at = data.get("fetched_at")
+    if isinstance(fetched_at, bool) or not isinstance(fetched_at, (int, float)):
+        return None
+    fetched_at = int(fetched_at)
+    if fetched_at <= 0 or fetched_at > now_ms() + 300000:
+        return None
+    rates = validated_rates(data.get("rates"))
+    if rates is None:
+        return None
+    return {"version": 1, "fetched_at": fetched_at, "rates": rates}
+
+
+def main(argv):
+    args = list(argv)
+    force = "--force" in args
+    args = [item for item in args if item != "--force"]
+    base = args[0].upper() if args else "USD"
+    if base != "USD":
+        emit({"ok": False, "error": "Only USD-based exchange rates are supported."})
+        return 2
+
+    now = now_ms()
+    cached = valid_cache(read_cache(CACHE_NAME))
+    if cached and not force and now - cached["fetched_at"] <= TTL_MS:
+        emit({"ok": True, "rates": cached["rates"], "fetched_at": cached["fetched_at"], "stale": False})
+        return 0
+
+    url = "https://open.er-api.com/v6/latest/USD"
+    try:
+        response = fetch_json(url, "open.er-api.com", timeout=8)
+        if not isinstance(response, dict) or response.get("result") not in (None, "success"):
+            raise SafeFetchError("exchange-rate provider returned an unsuccessful response")
+        if response.get("base_code") not in (None, "USD"):
+            raise SafeFetchError("exchange-rate provider returned an unexpected base currency")
+        rates = validated_rates(response.get("rates"))
+        if rates is None:
+            raise SafeFetchError("exchange-rate provider returned invalid rates")
+        fetched_at = now_ms()
+        cache = {"version": 1, "fetched_at": fetched_at, "rates": rates}
+        try:
+            write_cache(CACHE_NAME, cache)
+        except (OSError, SafeFetchError):
+            pass
+        emit({"ok": True, "rates": rates, "fetched_at": fetched_at, "stale": False})
+        return 0
+    except Exception:
+        if cached:
+            emit({"ok": True, "rates": cached["rates"], "fetched_at": cached["fetched_at"], "stale": True})
+            return 0
+        emit({"ok": False, "error": "Fiat exchange rates are unavailable; check your network connection."})
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

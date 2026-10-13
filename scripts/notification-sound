@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Play one short system-theme sound when the desktop provides a player."""
+
+import os
+import shutil
+import subprocess
+import sys
+
+
+SOUND_FILES = (
+    "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga",
+    "/usr/share/sounds/freedesktop/stereo/message.oga",
+)
+SOUND_EVENT = "message-new-instant"
+
+
+def sound_command():
+    for player in ("pw-play", "paplay"):
+        executable = shutil.which(player)
+        if not executable:
+            continue
+        for sound_file in SOUND_FILES:
+            if os.path.isfile(sound_file):
+                return [executable, sound_file]
+
+    canberra = shutil.which("canberra-gtk-play")
+    if canberra:
+        return [canberra, "-i", SOUND_EVENT]
+    return None
+
+
+def play_sound():
+    command = sound_command()
+    if not command:
+        return False
+    try:
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
+def main():
+    return 0 if play_sound() else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

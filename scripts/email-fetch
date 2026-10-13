@@ -1,0 +1,551 @@
+#!/usr/bin/env python3
+import email
+import email.header
+import email.message
+import email.policy
+import email.utils
+import hashlib
+import html.parser
+import imaplib
+import json
+import re
+import smtplib
+import ssl
+import subprocess
+import sys
+import time
+from datetime import timezone
+
+KEYRING_SERVICE = "io.github.yks777.kairos.email"
+MAX_INPUT_BYTES = 300000
+MAX_MESSAGE_BYTES = 2 * 1024 * 1024
+MAX_BODY_CHARS = 20000
+MAX_MESSAGES = 20
+
+
+class TextFromHtml(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+        self.skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in ("script", "style"):
+            self.skip += 1
+        elif tag.lower() in ("br", "p", "div", "li", "tr") and self.skip == 0:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag.lower() in ("script", "style") and self.skip > 0:
+            self.skip -= 1
+        elif tag.lower() in ("p", "div", "li", "tr") and self.skip == 0:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if self.skip == 0:
+            self.parts.append(data)
+
+    def text(self):
+        return re.sub(r"[ \t]+", " ", "".join(self.parts)).strip()[:MAX_BODY_CHARS]
+
+
+def emit(value):
+    print(json.dumps(value, ensure_ascii=True, separators=(",", ":")), flush=True)
+
+
+def bounded_text(value, limit=500):
+    return re.sub(r"[\x00-\x1f\x7f]", " ", str(value or "")).strip()[:limit]
+
+
+def valid_account_id(value):
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{1,80}", str(value or "")))
+
+
+def valid_host(value):
+    host = str(value or "").strip()
+    return bool(host and len(host) <= 253 and re.fullmatch(r"[A-Za-z0-9.:-]+", host) and ".." not in host)
+
+
+def valid_port(value, default):
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return default
+    return port if 1 <= port <= 65535 else default
+
+
+def safe_account(raw):
+    if not isinstance(raw, dict):
+        return None
+    account_id = str(raw.get("id", ""))
+    if not valid_account_id(account_id):
+        return None
+    fields = {
+        "id": account_id,
+        "name": bounded_text(raw.get("name") or raw.get("email") or "Email account", 80),
+        "email": bounded_text(raw.get("email"), 254),
+        "username": bounded_text(raw.get("username"), 254),
+        "imapHost": str(raw.get("imapHost", "")),
+        "imapPort": valid_port(raw.get("imapPort"), 993),
+        "smtpHost": str(raw.get("smtpHost", "")),
+        "smtpPort": valid_port(raw.get("smtpPort"), 587),
+    }
+    if not valid_host(fields["imapHost"]) or not valid_host(fields["smtpHost"]):
+        return None
+    if not fields["username"] or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", fields["email"]):
+        return None
+    return fields
+
+
+def keyring_secret(account_id):
+    if not valid_account_id(account_id):
+        raise RuntimeError("Email account identifier is invalid.")
+    try:
+        result = subprocess.run(
+            ["secret-tool", "lookup", "service", KEYRING_SERVICE, "account", account_id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=8,
+            check=False,
+            close_fds=True,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError("The Secret Service keyring is unavailable; install secret-tool and unlock your keyring.")
+    if result.returncode != 0 or result.stdout == "":
+        raise RuntimeError("No email password is stored for this account in the system keyring.")
+    return result.stdout.rstrip("\n")
+
+
+def decode_header(value):
+    pieces = []
+    try:
+        chunks = email.header.decode_header(str(value or ""))
+    except Exception:
+        return bounded_text(value, 300)
+    for part, charset in chunks:
+        if isinstance(part, bytes):
+            try:
+                part = part.decode(charset or "utf-8", "replace")
+            except (LookupError, UnicodeError):
+                part = part.decode("utf-8", "replace")
+        pieces.append(str(part))
+    return bounded_text("".join(pieces), 300)
+
+
+def normalized_subject(value):
+    subject = decode_header(value)
+    subject = re.sub(r"^(?:(?:re|fw|fwd)\s*:\s*)+", "", subject, flags=re.IGNORECASE).strip().lower()
+    return subject[:250] or "(no subject)"
+
+
+def parse_timestamp(message):
+    value = message.get("Date")
+    try:
+        parsed = email.utils.parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp() * 1000)
+    except (TypeError, ValueError, OverflowError):
+        return int(time.time() * 1000)
+
+
+def decode_part(part):
+    try:
+        raw = part.get_payload(decode=True)
+        if raw is None:
+            payload = part.get_payload()
+            return payload if isinstance(payload, str) else ""
+        charset = part.get_content_charset() or "utf-8"
+        try:
+            return raw.decode(charset, "replace")
+        except LookupError:
+            return raw.decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def message_body(message):
+    plain = []
+    html = []
+    attachments = []
+    parts = message.walk() if message.is_multipart() else [message]
+    for part in parts:
+        if part.is_multipart():
+            continue
+        disposition = str(part.get_content_disposition() or "").lower()
+        filename = decode_header(part.get_filename()) if part.get_filename() else ""
+        if disposition == "attachment" or filename:
+            attachments.append(bounded_text(filename or "Attachment", 200))
+            continue
+        content_type = str(part.get_content_type() or "").lower()
+        if content_type == "text/plain":
+            plain.append(decode_part(part))
+        elif content_type == "text/html":
+            html.append(decode_part(part))
+    if plain:
+        body = "\n".join(plain)
+    elif html:
+        parser = TextFromHtml()
+        try:
+            parser.feed("\n".join(html))
+            body = parser.text()
+        except Exception:
+            body = ""
+    else:
+        body = ""
+    body = re.sub(r"\r\n?", "\n", body)
+    body = re.sub(r"[ \t]+\n", "\n", body).strip()[:MAX_BODY_CHARS]
+    return body, attachments[:16]
+
+
+def format_address(value):
+    name, address = email.utils.parseaddr(str(value or ""))
+    name = decode_header(name)
+    address = bounded_text(address, 254)
+    if not address:
+        return bounded_text(value, 400)
+    return (name + " <" + address + ">") if name else address
+
+
+def thread_key(message):
+    references = bounded_text(message.get("References", ""), 1000)
+    message_ids = re.findall(r"<[^<>\s]{1,298}>", references)
+    if not message_ids:
+        in_reply_to = bounded_text(message.get("In-Reply-To", ""), 300)
+        message_ids = re.findall(r"<[^<>\s]{1,298}>", in_reply_to)
+    root_id = message_ids[0] if message_ids else bounded_text(message.get("Message-ID", ""), 300)
+    if not root_id:
+        root_id = normalized_subject(message.get("Subject", ""))
+    digest = hashlib.sha256(root_id.lower().encode("utf-8", "replace")).hexdigest()[:24]
+    return "thread-" + digest
+
+
+def parse_message(raw, account, uid=""):
+    if not isinstance(raw, bytes) or len(raw) > MAX_MESSAGE_BYTES:
+        return None
+    try:
+        message = email.message_from_bytes(raw, policy=email.policy.default)
+    except Exception:
+        return None
+    message_id = bounded_text(message.get("Message-ID", ""), 300)
+    if not message_id:
+        message_id = hashlib.sha256(raw[:4096]).hexdigest()
+    body, attachments = message_body(message)
+    from_display = format_address(message.get("From", ""))
+    _, from_email = email.utils.parseaddr(str(message.get("From", "")))
+    return {
+        "id": message_id,
+        "messageId": message_id,
+        "uid": bounded_text(uid, 32),
+        "accountId": account["id"],
+        "accountName": account["name"],
+        "from": from_display,
+        "fromEmail": bounded_text(from_email, 254),
+        "to": bounded_text(message.get("To", ""), 1000),
+        "cc": bounded_text(message.get("Cc", ""), 1000),
+        "subject": decode_header(message.get("Subject", "")) or "(no subject)",
+        "body": body,
+        "timestamp": parse_timestamp(message),
+        "unread": 1,
+        "hasAttachments": bool(attachments),
+        "attachmentNames": attachments,
+        "threadId": thread_key(message),
+        "inReplyTo": bounded_text(message.get("In-Reply-To", ""), 300),
+        "references": bounded_text(message.get("References", ""), 1000),
+    }
+
+
+def fetch_unread(client, account):
+    status, data = client.select("INBOX", readonly=True)
+    if status != "OK":
+        raise RuntimeError("Could not select the inbox.")
+    status, data = client.uid("search", None, "UNSEEN")
+    if status != "OK" or not data:
+        raise RuntimeError("Could not search unread messages.")
+    uids = data[0].split()[-MAX_MESSAGES:]
+    output = []
+    for uid in reversed(uids):
+        size_status, size_rows = client.uid("fetch", uid, "(RFC822.SIZE)")
+        size_text = b" ".join(item if isinstance(item, bytes) else b"" for item in (size_rows or []))
+        size_match = re.search(rb"RFC822\.SIZE\s+(\d+)", size_text, re.IGNORECASE)
+        if size_status != "OK" or (size_match and int(size_match.group(1)) > MAX_MESSAGE_BYTES):
+            continue
+        status, fetched = client.uid("fetch", uid, "(BODY.PEEK[])")
+        if status != "OK":
+            continue
+        raw = None
+        for entry in fetched or []:
+            if isinstance(entry, tuple) and isinstance(entry[1], bytes):
+                raw = entry[1]
+                break
+        parsed = parse_message(raw, account, uid.decode("ascii", "ignore")) if raw is not None else None
+        if parsed:
+            output.append(parsed)
+    output.sort(key=lambda item: item["timestamp"], reverse=True)
+    return output
+
+
+def connect_imap(account, password):
+    context = ssl.create_default_context()
+    port = account["imapPort"]
+    if port == 993:
+        client = imaplib.IMAP4_SSL(account["imapHost"], port, ssl_context=context, timeout=10)
+    elif port == 143:
+        client = imaplib.IMAP4(account["imapHost"], port, timeout=10)
+        if not hasattr(client, "starttls"):
+            client.logout()
+            raise RuntimeError("This Python version cannot start TLS for IMAP.")
+        client.starttls(ssl_context=context)
+    else:
+        raise RuntimeError("IMAP must use TLS on port 993 or STARTTLS on port 143.")
+    client.login(account["username"], password)
+    return client
+
+
+def mark_read(argv):
+    if len(argv) != 5:
+        emit({"ok": False, "error": "Email mark-read requires an account and IMAP connection settings."})
+        return 2
+    _, account_id, host, port_text, username = argv
+    if not valid_account_id(account_id) or not valid_host(host):
+        emit({"ok": False, "error": "Email account settings are invalid."})
+        return 2
+    try:
+        payload = json.loads(sys.stdin.read(MAX_INPUT_BYTES))
+        if not isinstance(payload, dict) or not isinstance(payload.get("uids"), list):
+            raise ValueError("invalid UID list")
+        uids = []
+        for value in payload["uids"][:100]:
+            uid = str(value or "")
+            if re.fullmatch(r"[0-9]{1,20}", uid) and uid not in uids:
+                uids.append(uid)
+        if not uids:
+            emit({"ok": True, "uids": []})
+            return 0
+        account = {
+            "id": account_id,
+            "username": bounded_text(username, 254),
+            "imapHost": host,
+            "imapPort": valid_port(port_text, 993),
+        }
+        password = keyring_secret(account_id)
+        client = connect_imap(account, password)
+        try:
+            status, _data = client.select("INBOX", readonly=False)
+            if status != "OK":
+                raise RuntimeError("Could not select the inbox for updating read state.")
+            marked = []
+            for uid in uids:
+                status, _data = client.uid("store", uid, "+FLAGS.SILENT", "(\\Seen)")
+                if status == "OK":
+                    marked.append(uid)
+            emit({"ok": True, "uids": marked})
+            return 0
+        finally:
+            try:
+                client.logout()
+            except Exception:
+                pass
+    except RuntimeError as exc:
+        emit({"ok": False, "error": str(exc)})
+        return 1
+    except Exception:
+        emit({"ok": False, "error": "Could not mark this email thread as read. Check the IMAP connection and system keyring."})
+        return 1
+
+
+def emit_account_update(account, messages=None, error=""):
+    emit({
+        "type": "messages",
+        "accountId": account["id"],
+        "ok": error == "",
+        "messages": messages or [],
+        "error": error,
+        "timestamp": int(time.time() * 1000),
+    })
+
+
+def watch_accounts():
+    try:
+        config = json.loads(sys.stdin.read(MAX_INPUT_BYTES))
+    except (ValueError, OSError):
+        emit({"type": "fatal", "ok": False, "error": "Email watcher configuration is invalid."})
+        return 2
+    raw_accounts = config.get("accounts", []) if isinstance(config, dict) else []
+    accounts = [account for account in (safe_account(item) for item in raw_accounts[:32]) if account]
+    if not accounts:
+        emit({"type": "fatal", "ok": False, "error": "No complete email accounts are configured."})
+        return 1
+
+    while True:
+        for account in accounts:
+            client = None
+            try:
+                password = keyring_secret(account["id"])
+                client = connect_imap(account, password)
+                emit_account_update(account, fetch_unread(client, account))
+                capabilities = getattr(client, "capabilities", [])
+                supports_idle = any(
+                    (capability.decode("ascii", "ignore") if isinstance(capability, bytes) else str(capability)).upper() == "IDLE"
+                    for capability in capabilities
+                )
+                if hasattr(client, "idle") and supports_idle:
+                    try:
+                        with client.idle(duration=20) as idler:
+                            for response_type, _response_data in idler:
+                                response_name = response_type.decode("ascii", "ignore") if isinstance(response_type, bytes) else str(response_type)
+                                if response_name.upper() in ("EXISTS", "RECENT", "EXPUNGE"):
+                                    break
+                    except (OSError, imaplib.IMAP4.error, TimeoutError):
+                        pass
+                else:
+                    time.sleep(20)
+                emit_account_update(account, fetch_unread(client, account))
+            except Exception as exc:
+                message = str(exc)
+                if "Secret Service" in message or "system keyring" in message:
+                    error = message
+                elif isinstance(exc, (OSError, imaplib.IMAP4.error, smtplib.SMTPException, TimeoutError)):
+                    error = "Could not reach the IMAP server or authenticate. Check the account and keyring."
+                else:
+                    error = "Could not read unread messages from the IMAP inbox."
+                emit_account_update(account, [], error)
+                time.sleep(2)
+            finally:
+                if client is not None:
+                    try:
+                        client.logout()
+                    except Exception:
+                        pass
+    return 0
+
+
+def store_secret(argv):
+    if len(argv) != 2 or not valid_account_id(argv[1]):
+        emit({"ok": False, "error": "Email account identifier is invalid."})
+        return 2
+    secret = sys.stdin.buffer.read(4097)
+    if not secret or len(secret) > 4096:
+        emit({"ok": False, "error": "The password is empty or too long."})
+        return 2
+    try:
+        result = subprocess.run(
+            ["secret-tool", "store", "--label=Kairos email account " + argv[1],
+             "service", KEYRING_SERVICE, "account", argv[1]],
+            input=secret,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+            close_fds=True,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        emit({"ok": False, "error": "The Secret Service keyring is unavailable; install secret-tool and unlock your keyring."})
+        return 1
+    if result.returncode != 0:
+        emit({"ok": False, "error": "The keyring did not accept the email password."})
+        return 1
+    emit({"ok": True})
+    return 0
+
+
+def clear_secret(argv):
+    if len(argv) != 2 or not valid_account_id(argv[1]):
+        emit({"ok": False, "error": "Email account identifier is invalid."})
+        return 2
+    try:
+        result = subprocess.run(
+            ["secret-tool", "clear", "service", KEYRING_SERVICE, "account", argv[1]],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            check=False,
+            close_fds=True,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        emit({"ok": False, "error": "The Secret Service keyring is unavailable."})
+        return 1
+    emit({"ok": result.returncode == 0, "error": "" if result.returncode == 0 else "No keyring item was cleared."})
+    return 0 if result.returncode == 0 else 1
+
+
+def send_message(argv):
+    if len(argv) != 6:
+        emit({"ok": False, "error": "Email send requires an account and SMTP connection settings."})
+        return 2
+    _, account_id, host, port_text, username, sender = argv
+    if not valid_account_id(account_id) or not valid_host(host):
+        emit({"ok": False, "error": "Email account settings are invalid."})
+        return 2
+    try:
+        port = valid_port(port_text, 587)
+        config = json.loads(sys.stdin.read(MAX_INPUT_BYTES))
+        if not isinstance(config, dict):
+            raise ValueError("invalid message")
+        to = bounded_text(config.get("to"), 2000)
+        cc = bounded_text(config.get("cc"), 2000)
+        subject = bounded_text(config.get("subject"), 300)
+        body = str(config.get("body", ""))[:MAX_BODY_CHARS]
+        recipients = [address for _name, address in email.utils.getaddresses([to, cc]) if address]
+        if not recipients or any(not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", address) for address in recipients):
+            raise ValueError("The recipient address is invalid.")
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", sender):
+            raise ValueError("The sender address is invalid.")
+        password = keyring_secret(account_id)
+        message = email.message.EmailMessage()
+        message["From"] = sender
+        message["To"] = to
+        if cc:
+            message["Cc"] = cc
+        message["Subject"] = subject
+        in_reply_to = bounded_text(config.get("inReplyTo"), 300)
+        references = bounded_text(config.get("references"), 1000)
+        if in_reply_to and "\n" not in in_reply_to and "\r" not in in_reply_to:
+            message["In-Reply-To"] = in_reply_to
+        if references and "\n" not in references and "\r" not in references:
+            message["References"] = references
+        message.set_content(body)
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=10, context=ssl.create_default_context()) as client:
+                client.login(username, password)
+                client.send_message(message, from_addr=sender, to_addrs=recipients)
+        else:
+            if port != 587:
+                raise ValueError("SMTP must use implicit TLS on port 465 or STARTTLS on port 587.")
+            with smtplib.SMTP(host, port, timeout=10) as client:
+                client.ehlo()
+                client.starttls(context=ssl.create_default_context())
+                client.ehlo()
+                client.login(username, password)
+                client.send_message(message, from_addr=sender, to_addrs=recipients)
+        emit({"ok": True, "messageId": bounded_text(message.get("Message-ID", ""), 300)})
+        return 0
+    except (ValueError, RuntimeError) as exc:
+        emit({"ok": False, "error": str(exc)})
+        return 1
+    except Exception:
+        emit({"ok": False, "error": "Email could not be sent. Check the SMTP settings and system keyring."})
+        return 1
+
+
+def main(argv):
+    if not argv:
+        emit({"ok": False, "error": "Expected an email operation."})
+        return 2
+    if argv[0] == "watch":
+        return watch_accounts()
+    if argv[0] == "send":
+        return send_message(argv)
+    if argv[0] == "store":
+        return store_secret(argv)
+    if argv[0] == "clear":
+        return clear_secret(argv)
+    if argv[0] == "mark-read":
+        return mark_read(argv)
+    emit({"ok": False, "error": "Unsupported email operation."})
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
