@@ -45,8 +45,7 @@ function defaultSettings() {
     obsidian: {
       enabled: false,
       diaryPath: "",
-      vaultName: "",
-      templatePath: ""
+      vaultName: ""
     },
     markets: {
       currency: "USD",
@@ -227,6 +226,7 @@ function migrateObsidianSettings(settings) {
   }
   delete obs.vaultPath;
   delete obs.dailyNotesFolder;
+  delete obs.templatePath;
 }
 
 function migrate(raw) {
@@ -327,7 +327,7 @@ function sanitizeSettings(raw) {
   if (diaryPath !== "" && diaryPath.charAt(0) !== "/") diaryPath = "";
   settings.obsidian.diaryPath = diaryPath;
   settings.obsidian.vaultName = boundedString(settings.obsidian.vaultName, "", 128);
-  settings.obsidian.templatePath = boundedString(settings.obsidian.templatePath, "", 1024);
+  delete settings.obsidian.templatePath;
 
   var currencyList = [];
   var rawCurrencyList = Array.isArray(settings.markets.currencies) ? settings.markets.currencies : DEFAULT_MARKET_CURRENCIES;

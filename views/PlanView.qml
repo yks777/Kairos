@@ -42,40 +42,14 @@ Item {
       Layout.fillWidth: true
       Layout.fillHeight: true
 
-      MatrixColumn {
-        service: root.service
-        columnId: "q1"
-        title: "Q1 · DO"
-        subtitle: "Urgent + Important"
-        menuTaskId: root.menuTaskId
-        onCardMenu: function(taskId) { root.toggleCardMenu(taskId); }
-      }
-
-      MatrixColumn {
-        service: root.service
-        columnId: "q2"
-        title: "Q2 · SCHEDULE"
-        subtitle: "Important, not urgent"
-        menuTaskId: root.menuTaskId
-        onCardMenu: function(taskId) { root.toggleCardMenu(taskId); }
-      }
-
-      MatrixColumn {
-        service: root.service
-        columnId: "q3"
-        title: "Q3 · DELEGATE"
-        subtitle: "Urgent, not important"
-        menuTaskId: root.menuTaskId
-        onCardMenu: function(taskId) { root.toggleCardMenu(taskId); }
-      }
-
-      MatrixColumn {
-        service: root.service
-        columnId: "q4"
-        title: "Q4 · DELETE"
-        subtitle: "Neither"
-        menuTaskId: root.menuTaskId
-        onCardMenu: function(taskId) { root.toggleCardMenu(taskId); }
+      // Dynamic board columns based on panels
+      Repeater {
+        model: service.panelsForBoard(service.activeBoardId)
+        BoardColumn {
+          panelId: modelData.id
+          service: root.service
+          onCardMenu: function(taskId) { root.toggleCardMenu(taskId); }
+        }
       }
     }
   }

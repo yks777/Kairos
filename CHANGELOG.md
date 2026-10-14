@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Obsidian daily notes now live directly in the diary folder as `YYYY-MM-DD.md` (no year/month subfolders), matching flat diary layouts. Missing days are created as empty notes and opened in Obsidian; existing days just open. Removed the static template setting and template rendering; stale `templatePath` keys are dropped by state sanitization. Updated SettingsView, ObsidianService, ObsidianModel, and model tests.
+
 - Simplified Obsidian configuration from `vaultPath` + `dailyNotesFolder` to a single `diaryPath` field. The plugin now auto-detects the Obsidian vault root by searching for a `.obsidian` directory, derives the vault name from it (with an optional manual override), and computes the Obsidian URI relative path automatically. State schema bumped to 5 with automatic migration from v3/v4 settings. Updated SettingsView, ObsidianService, and ObsidianModel.
 
 ## 1.0.0

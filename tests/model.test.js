@@ -116,8 +116,7 @@ test("schema version 4 state migrates vaultPath and dailyNotesFolder into diaryP
     enabled: true,
     vaultPath: "/home/user/Notes Vault",
     vaultName: "",
-    dailyNotesFolder: "0. YKS/Diario",
-    templatePath: ""
+    dailyNotesFolder: "0. YKS/Diario"
   };
   const result = Model.sanitizeState(state);
   assert.equal(result.repaired, true);
@@ -125,6 +124,7 @@ test("schema version 4 state migrates vaultPath and dailyNotesFolder into diaryP
   assert.equal(result.state.settings.obsidian.diaryPath, "/home/user/Notes Vault/0. YKS/Diario");
   assert.equal(result.state.settings.obsidian.vaultPath, undefined);
   assert.equal(result.state.settings.obsidian.dailyNotesFolder, undefined);
+  assert.equal(result.state.settings.obsidian.templatePath, undefined);
   assert.equal(result.state.settings.obsidian.vaultName, "");
 });
 
@@ -134,16 +134,15 @@ test("migrateObsidianSettings constructs diaryPath from vaultPath and dailyNotes
       enabled: true,
       vaultPath: "/home/yks/Obsidian/Meu-segundo-cerebro",
       dailyNotesFolder: "0. YKS/Diario",
-      vaultName: "My Vault",
-      templatePath: ""
+      vaultName: "My Vault"
     }
   };
   Model.migrateObsidianSettings(settings);
   assert.equal(settings.obsidian.diaryPath, "/home/yks/Obsidian/Meu-segundo-cerebro/0. YKS/Diario");
   assert.equal(settings.obsidian.vaultPath, undefined);
   assert.equal(settings.obsidian.dailyNotesFolder, undefined);
+  assert.equal(settings.obsidian.templatePath, undefined);
   assert.equal(settings.obsidian.vaultName, "My Vault");
-  assert.equal(settings.obsidian.templatePath, "");
 
   const settingsNoFolder = { obsidian: { vaultPath: "/vault", dailyNotesFolder: "" } };
   Model.migrateObsidianSettings(settingsNoFolder);

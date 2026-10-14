@@ -95,7 +95,7 @@ Panel {
     if (root.currentView === "social") return Style.space(620);
     if (root.currentView === "day") return Style.space(560);
     if (root.currentView === "stats") return Style.space(480);
-    if (root.currentView === "settings") return Style.space(460);
+    if (root.currentView === "settings") return Style.space(620);
     return Style.space(400);
   }
 
