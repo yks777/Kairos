@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import qs.Commons
 import ".."
-import "logic/Model.js" as Model
+import "../../logic/Model.js" as Model
 
 ColumnLayout {
     id: root
@@ -23,7 +23,7 @@ ColumnLayout {
     Layout.fillHeight: true
 
     // Get the panel object from panelId
-    readonly property var panel: {
+    readonly property var panelObj: {
         if (!service || !panelId) return null
         var panels = service.panelsForBoard(service.activeBoardId)
         for (var i = 0; i < panels.length; i++) {
@@ -35,7 +35,7 @@ ColumnLayout {
     }
 
     // Get panel's boardId
-    readonly property string boardId: panel ? panel.boardId : ""
+    readonly property string boardId: panelObj ? panelObj.boardId : ""
 
     // Get panel index in board for columnId calculation
     readonly property int panelIndex: {
@@ -60,19 +60,19 @@ ColumnLayout {
 
     // Get tasks for this panel in correct order
     readonly property var panelTasks: {
-        if (!service || !boardId) return []
+        if (!service || !panelObj) return []
         
         // Get all incomplete tasks for this board
         var allTasks = []
         for (var i = 0; i < service.tasks.length; i++) {
             var task = service.tasks[i]
-            if (task.boardId === boardId && !task.completedAt) {
+            if (task.boardId === panelObj.boardId && !task.completedAt) {
                 allTasks.push(task)
             }
         }
         
         // If no taskIds ordering specified, sort by creation date
-        if (!panel || !panel.taskIds || panel.taskIds.length === 0) {
+        if (!panelObj.taskIds || panelObj.taskIds.length === 0) {
             allTasks.sort(function(a, b) {
                 return a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id))
             })
@@ -80,15 +80,15 @@ ColumnLayout {
         }
         
         // Separate ordered and unordered tasks
-        var orderedTasks = [] // Tasks in panel.taskIds, in that order
+        var orderedTasks = [] // Tasks in panelObj.taskIds, in that order
         var taskIdsMap = {} // For quick lookup
-        for (var i = 0; i < panel.taskIds.length; i++) {
-            taskIdsMap[panel.taskIds[i]] = true
+        for (var i = 0; i < panelObj.taskIds.length; i++) {
+            taskIdsMap[panelObj.taskIds[i]] = true
         }
         
         // First pass: add tasks that are in taskIds, in order
-        for (var i = 0; i < panel.taskIds.length; i++) {
-            var taskId = panel.taskIds[i]
+        for (var i = 0; i < panelObj.taskIds.length; i++) {
+            var taskId = panelObj.taskIds[i]
             for (var j = 0; j < allTasks.length; j++) {
                 if (allTasks[j].id === taskId) {
                     orderedTasks.push(allTasks[j])
@@ -121,7 +121,7 @@ ColumnLayout {
 
             Text {
                 textFormat: Text.PlainText
-                text: panel ? panel.title : "Column"
+                text: panelObj ? panelObj.title : "Column"
                 color: Color.popups.text
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption
@@ -138,17 +138,17 @@ ColumnLayout {
             }
         }
 
-        Text {
-            textFormat: Text.PlainText
-            text: panel ? "" : "" // Subtitle not used in board view for now
-            color: Color.muted
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-            visible: false // No subtitle in board view
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
-            Layout.fillWidth: true
-        }
+            Text {
+                textFormat: Text.PlainText
+                text: "" // No subtitle in board view
+                color: Color.muted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+                visible: false
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
     }
 
     Rectangle {
@@ -196,19 +196,19 @@ ColumnLayout {
                 // Get source panel info from the dragged task
                 var sourceBoardId = source.task.boardId
                 var sourcePanelId = ""
-                var sourcePanelIndex = -1
                 
                 // Find which panel this task came from
                 if (root.service && sourceBoardId) {
                     var sourcePanels = root.service.panelsForBoard(sourceBoardId)
                     for (var i = 0; i < sourcePanels.length; i++) {
                         var panel = sourcePanels[i]
-                        // Check if task is in this panel's taskIds or matches columnId
+                        // Check if task is in this panel's taskIds
                         var inPanel = false
-                        if (panel.taskIds && panel.taskIds.indexOf(taskId) !== -1) {
+                        if (panelObj.taskIds && panelObj.taskIds.indexOf(taskId) !== -1) {
                             inPanel = true
-                        } else {
-                            // Fallback: check if task's columnId matches panel's expected columnId
+                        }
+                        // Fallback: check if task's columnId matches panel's expected columnId (for backward compatibility)
+                        else {
                             var expectedColId = ""
                             if (i < Model.COLUMNS.length) {
                                 expectedColId = Model.COLUMNS[i]
@@ -220,8 +220,7 @@ ColumnLayout {
                             }
                         }
                         if (inPanel) {
-                            sourcePanelId = panel.id
-                            sourcePanelIndex = i
+                            sourcePanelId = panelObj.id
                             break
                         }
                     }
@@ -230,16 +229,26 @@ ColumnLayout {
                 // If dragging from same panel, reorder within panel
                 if (sourcePanelId === root.panelId && sourcePanelId !== "") {
                     // Reorder tasks within the same panel
-                    var newTaskIds = [...root.panel.taskIds] // Copy current taskIds
+                    var newTaskIds = [...root.panelObj.taskIds] // Copy current taskIds
                     var oldIndex = newTaskIds.indexOf(taskId)
                     if (oldIndex !== -1) {
                         newTaskIds.splice(oldIndex, 1) // Remove task from old position
                         
-                        // Estimate new index based on drop position
-                        // Simple approach: insert at end for now
-                        // TODO: Improve drop position detection
-                        newTaskIds.push(taskId) // Insert at end
+                        // Estimate new index based on drop position in the list
+                        // We'll approximate by finding the closest task item
+                        var newIndex = newTaskIds.length // Default to end
+                        if (drop.y >= 0 && drop.y <= list.height) {
+                            // Normalize drop position to 0-1 range
+                            var relativeY = drop.y / list.height
+                            // Find the task item closest to this position
+                            if (list.count > 0) {
+                                var itemHeight = list.height / list.count
+                                var approximateIndex = Math.floor(relativeY * list.count)
+                                newIndex = Math.min(Math.max(0, approximateIndex), newTaskIds.length)
+                            }
+                        }
                         
+                        newTaskIds.splice(newIndex, 0, taskId) // Insert task at new position
                         root.service.reorderPanelTasks(root.panelId, newTaskIds)
                     }
                 } 
@@ -317,24 +326,24 @@ ColumnLayout {
         }
     }
 
-    TaskEditor {
-        id: editor
-        visible: root.editorOpen
-        Layout.fillWidth: true
-        onSaved: function(title) {
-            if (root.service) {
-                // Create task with columnId based on panel index
-                var taskId = root.service.createTask(title, root.columnId)
-                // Add task to end of panel's taskIds for proper ordering
-                if (root.panel && root.panel.taskIds) {
-                    var newTaskIds = [...root.panel.taskIds, taskId]
-                    root.service.reorderPanelTasks(root.panelId, newTaskIds)
+        TaskEditor {
+            id: editor
+            visible: root.editorOpen
+            Layout.fillWidth: true
+            onSaved: function(title) {
+                if (root.service) {
+                    // Create task with columnId based on panel index
+                    var taskId = root.service.createTask(title, root.columnId)
+                    // Add task to end of panel's taskIds for proper ordering
+                    if (root.panelObj && root.panelObj.taskIds) {
+                        var newTaskIds = [...root.panelObj.taskIds, taskId]
+                        root.service.reorderPanelTasks(root.panelId, newTaskIds)
+                    }
                 }
+                root.editorOpen = false
             }
-            root.editorOpen = false
+            onCancelled: root.editorOpen = false
         }
-        onCancelled: root.editorOpen = false
-    }
 
     FlowButton {
         text: "+ Add task"

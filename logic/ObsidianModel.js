@@ -1,7 +1,6 @@
 .pragma library
 
 var DEFAULT_DAILY_NOTES_FOLDER = "Daily Notes";
-var MAX_TEMPLATE_LENGTH = 262144;
 
 function pad2(value) { return Number(value) < 10 ? "0" + Number(value) : String(value); }
 
@@ -35,7 +34,7 @@ function resolveDailyNotePath(diaryPath, date) {
   var diary = cleanAbsolutePath(diaryPath);
   var input = date instanceof Date ? date : new Date(date);
   if (!diary || isNaN(input.getTime())) return "";
-  return diary + "/" + String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1) + "/" + dateKey(input) + ".md";
+  return diary + "/" + dateKey(input) + ".md";
 }
 
 function relativeDailyNotePath(diaryPath, vaultRoot, date) {
@@ -43,10 +42,10 @@ function relativeDailyNotePath(diaryPath, vaultRoot, date) {
   var root = cleanAbsolutePath(vaultRoot);
   var input = date instanceof Date ? date : new Date(date);
   if (!diary || !root || isNaN(input.getTime())) return "";
-  if (diary === root) return String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1) + "/" + dateKey(input) + ".md";
+  if (diary === root) return dateKey(input) + ".md";
   if (diary.indexOf(root + "/") !== 0) return "";
   var relative = diary.slice(root.length + 1);
-  return relative + "/" + String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1) + "/" + dateKey(input) + ".md";
+  return relative + "/" + dateKey(input) + ".md";
 }
 
 function parentPath(path) {
@@ -77,21 +76,6 @@ function obsidianUri(vault, relativePath) {
   var pathValue = String(relativePath || "").trim();
   if (!vaultValue || !safeRelativePath(pathValue)) return "";
   return "obsidian://open?vault=" + encodeURIComponent(vaultValue) + "&file=" + encodeURIComponent(pathValue);
-}
-
-function renderTemplate(dateTime) {
-  var timestamp = String(dateTime || "").trim();
-  return "---\ndata e hora: " + timestamp + "\ntags:\n  - Diario\n---\n-\n";
-}
-
-function renderConfiguredTemplate(source, dateTime) {
-  var template = String(source || "").replace(/\r\n?/g, "\n");
-  if (template === "" || template.length > MAX_TEMPLATE_LENGTH || /<%[\s\S]*?%>/.test(template))
-    return renderTemplate(dateTime);
-  var timestamp = String(dateTime || "").trim();
-  var linePattern = /^([ \t]*data e hora[ \t]*:[ \t]*).*$/m;
-  if (!linePattern.test(template)) return renderTemplate(timestamp);
-  return template.replace(linePattern, "$1" + timestamp);
 }
 
 function taskFromLine(line, lineIndex) {
@@ -196,8 +180,6 @@ if (typeof module !== "undefined") {
     vaultName: vaultName,
     safeRelativePath: safeRelativePath,
     obsidianUri: obsidianUri,
-    renderTemplate: renderTemplate,
-    renderConfiguredTemplate: renderConfiguredTemplate,
     parseTasks: parseTasks,
     toggleTask: toggleTask,
     addTask: addTask

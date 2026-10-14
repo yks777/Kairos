@@ -5,20 +5,20 @@ const ObsidianModel = loadQmlLibrary("logic/ObsidianModel.js");
 
 const date = new Date(2026, 9, 12, 9, 7);
 
-test("daily note paths use diary folder, year, month, and local date", () => {
+test("daily note paths live directly in the diary folder with the local date", () => {
   const diaryPath = "/home/user/Notes Vault/Daily Notes";
   const vaultRoot = "/home/user/Notes Vault";
   assert.equal(
     ObsidianModel.resolveDailyNotePath(diaryPath, date),
-    "/home/user/Notes Vault/Daily Notes/2026/10/2026-10-12.md"
+    "/home/user/Notes Vault/Daily Notes/2026-10-12.md"
   );
   assert.equal(
     ObsidianModel.relativeDailyNotePath(diaryPath, vaultRoot, date),
-    "Daily Notes/2026/10/2026-10-12.md"
+    "Daily Notes/2026-10-12.md"
   );
   assert.equal(
     ObsidianModel.relativeDailyNotePath(vaultRoot, vaultRoot, date),
-    "2026/10/2026-10-12.md"
+    "2026-10-12.md"
   );
   assert.equal(ObsidianModel.parentPath("/home/user/Vault/a/b.md"), "/home/user/Vault/a");
 });
@@ -44,24 +44,8 @@ test("daily path resolution rejects traversal and non-absolute diary paths", () 
   assert.equal(ObsidianModel.resolveDailyNotePath("", date), "");
 });
 
-test("built-in daily note template is exact and uses the requested Portuguese metadata", () => {
-  assert.equal(
-    ObsidianModel.renderTemplate("2026-10-12 09:07"),
-    "---\ndata e hora: 2026-10-12 09:07\ntags:\n  - Diario\n---\n-\n"
-  );
+test("date-time helper formats the local timestamp", () => {
   assert.equal(ObsidianModel.formatDateTime(date), "2026-10-12 09:07");
-});
-
-test("static templates get a timestamp while Templater markup is never executed", () => {
-  const source = "---\ndata e hora: old value\ntags:\n  - Daily\n---\n\nNotes\n";
-  assert.equal(
-    ObsidianModel.renderConfiguredTemplate(source, "2026-10-12 09:07"),
-    "---\ndata e hora: 2026-10-12 09:07\ntags:\n  - Daily\n---\n\nNotes\n"
-  );
-  assert.equal(
-    ObsidianModel.renderConfiguredTemplate("<% tp.file.title %>", "2026-10-12 09:07"),
-    ObsidianModel.renderTemplate("2026-10-12 09:07")
-  );
 });
 
 test("task parsing ignores code fences and preserves checkbox line indexes", () => {
@@ -101,8 +85,8 @@ test("new tasks go after the last task in the first section with tasks", () => {
 
 test("Obsidian URIs encode vault names and relative paths and reject traversal", () => {
   assert.equal(
-    ObsidianModel.obsidianUri("My Vault", "Daily Notes/2026/10/2026-10-12.md"),
-    "obsidian://open?vault=My%20Vault&file=Daily%20Notes%2F2026%2F10%2F2026-10-12.md"
+    ObsidianModel.obsidianUri("My Vault", "Daily Notes/2026-10-12.md"),
+    "obsidian://open?vault=My%20Vault&file=Daily%20Notes%2F2026-10-12.md"
   );
   assert.equal(ObsidianModel.obsidianUri("My Vault", "../secret.md"), "");
 });

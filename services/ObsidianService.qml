@@ -23,9 +23,6 @@ Item {
   property bool pendingOpen: false
   property string pendingOpenPath: ""
   property var pendingOpenDate: null
-  property string pendingTemplatePath: ""
-  property string templateLoadedPath: ""
-  property string cachedTemplateText: ""
   property string pendingCreatePath: ""
   property string pendingCreateDateKey: ""
   property var pendingCreateDate: null
@@ -307,25 +304,12 @@ Item {
     root.pendingCreateDateKey = key;
     root.pendingCreateDate = new Date(date);
     root.pendingInitialTask = String(initialTask || "");
-    var templatePath = String(config.templatePath || "").trim();
-    if (templatePath) {
-      if (root.templateLoadedPath === templatePath) {
-        root.writeNewNote(root.cachedTemplateText);
-      } else {
-        root.pendingTemplatePath = templatePath;
-        templateFile.path = templatePath;
-      }
-      return;
-    }
     root.writeNewNote("");
   }
 
-  function writeNewNote(templateText) {
+  function writeNewNote(initialContent) {
     var date = root.pendingCreateDate || new Date();
-    var timestamp = ObsidianModel.formatDateTime(date);
-    var content = String(templateText || "")
-      ? ObsidianModel.renderConfiguredTemplate(templateText, timestamp)
-      : ObsidianModel.renderTemplate(timestamp);
+    var content = String(initialContent || "");
     if (root.pendingInitialTask) content = ObsidianModel.addTask(content, root.pendingInitialTask);
     var shouldOpen = root.pendingOpen && root.pendingOpenPath === root.pendingCreatePath;
     root.queueWrite(root.pendingCreatePath, content, date, shouldOpen);
@@ -453,26 +437,6 @@ Item {
     onLoaded: root.applyTodayTasks(text())
     onFileChanged: todayTasksFile.reload()
     onLoadFailed: function(error) { root.applyTodayTaskLoadFailure(error); }
-  }
-
-  FileView {
-    id: templateFile
-    watchChanges: false
-    atomicWrites: false
-    printErrors: false
-    onLoaded: {
-      root.templateLoadedPath = root.pendingTemplatePath;
-      root.cachedTemplateText = text();
-      root.pendingTemplatePath = "";
-      root.writeNewNote(root.cachedTemplateText);
-    }
-    onLoadFailed: function(error) {
-      root.templateLoadedPath = "";
-      root.cachedTemplateText = "";
-      root.pendingTemplatePath = "";
-      root.setError("Could not read the configured static template; using the built-in template.");
-      root.writeNewNote("");
-    }
   }
 
   Process {
