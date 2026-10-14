@@ -5,8 +5,8 @@ import qs.Ui
 import "logic/ClockModel.js" as ClockModel
 import "logic/TimerEngine.js" as TimerEngine
 
-// Compact clock widget. Loads Panel.qml internally via Loader;
-// this follows the Omarchy bar-widget with panel pattern.
+// Compact clock widget. The panel is loaded standalone by the shell
+// panel-loader; this widget delegates open/toggle to shell.summon/toggle.
 BarWidget {
   id: root
   moduleName: "io.github.yks777.kairos"
@@ -111,50 +111,41 @@ BarWidget {
     return String(text || "").split("\n").length;
   }
 
-  // ---- Panel lifecycle (forwarded to internally loaded Panel.qml) ----
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+  // ---- Panel lifecycle (delegated to the shell panel-loader) ----
+  readonly property bool opened: root.bar && root.bar.shell && typeof root.bar.shell.isPluginOpen === "function"
+    ? root.bar.shell.isPluginOpen(root.moduleName) : false
+  readonly property bool popoutSwitchClosing: false
 
   function open(payloadJson) {
-    if (panelLoader.item) panelLoader.item.open(payloadJson);
+    var payload = payloadJson || "{}";
+    if (root.bar && root.bar.shell && typeof root.bar.shell.summon === "function") {
+      root.bar.shell.summon(root.moduleName, payload);
+      return;
+    }
+    Quickshell.execDetached(["omarchy-shell", "shell", "summon", root.moduleName, payload]);
   }
 
   function close() {
-    if (panelLoader.item) panelLoader.item.close();
+    if (root.bar && root.bar.shell && typeof root.bar.shell.hide === "function") {
+      root.bar.shell.hide(root.moduleName);
+      return;
+    }
+    Quickshell.execDetached(["omarchy-shell", "shell", "hide", root.moduleName]);
   }
 
   function toggle() {
-    if (panelLoader.item) panelLoader.item.toggle();
+    if (root.bar && root.bar.shell && typeof root.bar.shell.toggle === "function") {
+      root.bar.shell.toggle(root.moduleName, "{}");
+      return;
+    }
+    Quickshell.execDetached(["omarchy-shell", "shell", "toggle", root.moduleName, "{}"]);
   }
 
-  function closeForPopoutSwitch() {
-    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch();
-  }
-
-  function injectPanel() {
-    if (!panelLoader.item) return;
-    panelLoader.item.bar = root.bar;
-    panelLoader.item.anchorItem = horizontalClockButton;
-    panelLoader.item.hostWidget = root;
-    panelLoader.item.service = root.kairosService;
-  }
+  function closeForPopoutSwitch() { root.close(); }
 
   // ---- Bar widget lifecycle ----
   implicitWidth: root.vertical ? verticalStack.implicitWidth : horizontalRow.implicitWidth
   implicitHeight: root.vertical ? verticalStack.implicitHeight : horizontalRow.implicitHeight
-
-  onBarChanged: injectPanel()
-
-  Loader {
-    id: panelLoader
-    active: true
-    source: Qt.resolvedUrl("Panel.qml")
-    visible: false
-    onLoaded: {
-      root.injectPanel();
-      Qt.callLater(root.injectPanel);
-    }
-  }
 
   Row {
     id: horizontalRow

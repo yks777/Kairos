@@ -20,6 +20,7 @@ Rectangle {
   property bool dragging: false
   property bool dragPerformed: false
   property string dragImage: ""
+  property string _panelId: ""
 
   signal toggleMenu()
   signal startFocus()

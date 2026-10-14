@@ -31,6 +31,7 @@ Item {
   // ---- Canonical state (replace values; do not mutate them in place) ----
   property var settings: Model.defaultSettings()
   property var boards: Model.defaultBoards()
+  property var panels: []
   property var tasks: []
   property var sessions: []
   property string activeBoardId: "board-life"
@@ -503,6 +504,255 @@ Item {
     return focusAction;
   }
 
+  // ---- Board / Panel management ----
+  function panelsForBoard(boardId) {
+    var bid = String(boardId || root.activeBoardId);
+    var output = [];
+    for (var i = 0; i < root.panels.length; i++) {
+      var panel = root.panels[i];
+      if (panel.boardId === bid) output.push(panel);
+    }
+    output.sort(function(a, b) { return a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)); });
+    return output;
+  }
+
+  function activeBoard() {
+    for (var i = 0; i < root.boards.length; i++) {
+      if (root.boards[i].id === root.activeBoardId) return root.boards[i];
+    }
+    return root.boards[0] || null;
+  }
+
+  function createBoard(title) {
+    var name = String(title || "").replace(/\s+/g, " ").trim().slice(0, 48);
+    if (name === "") name = "New Board";
+    var now = root.nowMs();
+    var board = {
+      id: Model.uid("board"),
+      title: name,
+      createdAt: now,
+      updatedAt: now
+    };
+    var newBoards = root.boards.concat([board]);
+    var newPanels = root.panels.concat(Model.defaultBoardPanels(board.id));
+    root.boards = newBoards;
+    root.panels = newPanels;
+    root.activeBoardId = board.id;
+    root.bump();
+    root.saveNow();
+    return board.id;
+  }
+
+  function updateBoard(boardId, fields) {
+    var id = String(boardId || "");
+    var patch = fields && typeof fields === "object" ? fields : {};
+    var now = root.nowMs();
+    var found = false;
+    var nextBoards = root.boards.map(function(board) {
+      if (board.id !== id) return board;
+      found = true;
+      var copy = {};
+      for (var key in board) if (Object.prototype.hasOwnProperty.call(board, key)) copy[key] = board[key];
+      if (patch.title !== undefined) {
+        var title = String(patch.title || "").replace(/\s+/g, " ").trim().slice(0, 48);
+        if (title !== "") copy.title = title;
+      }
+      copy.updatedAt = now;
+      return copy;
+    });
+    if (!found) return false;
+    root.boards = nextBoards;
+    root.bump();
+    root.saveNow();
+    return true;
+  }
+
+  function deleteBoard(boardId) {
+    var id = String(boardId || "");
+    if (root.boards.length <= 1) return false; // Prevent deleting last board
+    var before = root.boards.length;
+    root.boards = root.boards.filter(function(board) { return board.id !== id; });
+    if (root.boards.length === before) return false;
+    root.panels = root.panels.filter(function(panel) { return panel.boardId !== id; });
+    root.tasks = root.tasks.filter(function(task) { return task.boardId !== id; });
+    if (root.activeBoardId === id) {
+      root.activeBoardId = root.boards[0].id;
+    }
+    root.bump();
+    root.saveNow();
+    return true;
+  }
+
+  function reorderBoards(boardIds) {
+    var ids = Array.isArray(boardIds) ? boardIds : [];
+    var idSet = {};
+    for (var i = 0; i < ids.length; i++) idSet[String(ids[i])] = true;
+    var ordered = [];
+    for (var j = 0; j < ids.length; j++) {
+      for (var k = 0; k < root.boards.length; k++) {
+        if (root.boards[k].id === ids[j]) {
+          ordered.push(root.boards[k]);
+          break;
+        }
+      }
+    }
+    // Append any boards not in the provided list
+    for (var m = 0; m < root.boards.length; m++) {
+      if (!idSet[root.boards[m].id]) ordered.push(root.boards[m]);
+    }
+    if (ordered.length !== root.boards.length) return false;
+    root.boards = ordered;
+    root.bump();
+    root.saveNow();
+    return true;
+  }
+
+  function setActiveBoard(boardId) {
+    var id = String(boardId || "");
+    var exists = root.boards.some(function(board) { return board.id === id; });
+    if (!exists) return false;
+    if (root.activeBoardId === id) return true;
+    root.activeBoardId = id;
+    // Clear active task if it doesn't exist on new board
+    var taskExists = root.tasks.some(function(task) {
+      return task.id === root.activeTaskId && task.boardId === id && !task.completedAt;
+    });
+    if (!taskExists) {
+      root.activeTaskId = "";
+      root.activeTaskText = "";
+    }
+    root.bump();
+    root.saveSoon();
+    return true;
+  }
+
+  function createPanel(boardId, title) {
+    var bid = String(boardId || root.activeBoardId);
+    var name = String(title || "").replace(/\s+/g, " ").trim().slice(0, 48);
+    if (name === "") name = "Column";
+    var now = root.nowMs();
+    var panel = {
+      id: Model.uid("panel"),
+      boardId: bid,
+      title: name,
+      createdAt: now,
+      updatedAt: now,
+      includedTagIds: [],
+      excludedTagIds: [],
+      taskDoneState: Model.PANEL_TASK_DONE_STATE.UnDone,
+      scheduledState: Model.PANEL_SCHEDULED_STATE.All,
+      sortBy: null,
+      sortDir: "asc",
+      taskIds: []
+    };
+    root.panels = root.panels.concat([panel]);
+    root.bump();
+    root.saveNow();
+    return panel.id;
+  }
+
+  function updatePanelConfig(panelId, fields) {
+    var id = String(panelId || "");
+    var patch = fields && typeof fields === "object" ? fields : {};
+    var now = root.nowMs();
+    var found = false;
+    root.panels = root.panels.map(function(panel) {
+      if (panel.id !== id) return panel;
+      found = true;
+      var copy = {};
+      for (var key in panel) if (Object.prototype.hasOwnProperty.call(panel, key)) copy[key] = panel[key];
+      if (patch.title !== undefined) {
+        var title = String(patch.title || "").replace(/\s+/g, " ").trim().slice(0, 48);
+        if (title !== "") copy.title = title;
+      }
+      if (patch.includedTagIds !== undefined && Array.isArray(patch.includedTagIds))
+        copy.includedTagIds = patch.includedTagIds.filter(function(t) { return typeof t === "string"; });
+      if (patch.excludedTagIds !== undefined && Array.isArray(patch.excludedTagIds))
+        copy.excludedTagIds = patch.excludedTagIds.filter(function(t) { return typeof t === "string"; });
+      if (patch.taskDoneState !== undefined)
+        copy.taskDoneState = Math.max(1, Math.min(3, Math.floor(Number(patch.taskDoneState))));
+      if (patch.scheduledState !== undefined)
+        copy.scheduledState = Math.max(1, Math.min(3, Math.floor(Number(patch.scheduledState))));
+      if (patch.sortBy !== undefined) {
+        var validSort = [Model.PANEL_SORT_FIELD.DueDate, Model.PANEL_SORT_FIELD.Created,
+          Model.PANEL_SORT_FIELD.Title, Model.PANEL_SORT_FIELD.TimeEstimate];
+        copy.sortBy = (patch.sortBy === null || validSort.indexOf(patch.sortBy) !== -1) ? patch.sortBy : null;
+      }
+      if (patch.sortDir !== undefined) copy.sortDir = patch.sortDir === "desc" ? "desc" : "asc";
+      copy.updatedAt = now;
+      return copy;
+    });
+    if (!found) return false;
+    root.bump();
+    root.saveNow();
+    return true;
+  }
+
+  function reorderPanelTasks(panelId, taskIds) {
+    var id = String(panelId || "");
+    var ids = Array.isArray(taskIds) ? taskIds.filter(function(t) { return typeof t === "string"; }) : [];
+    var found = false;
+    root.panels = root.panels.map(function(panel) {
+      if (panel.id !== id) return panel;
+      found = true;
+      var copy = {};
+      for (var key in panel) if (Object.prototype.hasOwnProperty.call(panel, key)) copy[key] = panel[key];
+      copy.taskIds = ids;
+      return copy;
+    });
+    if (!found) return false;
+    root.bump();
+    root.saveNow();
+    return true;
+  }
+
+  function moveTaskToPanel(taskId, panelId) {
+    var taskIdStr = String(taskId || "");
+    var panelIdStr = String(panelId || "");
+    var now = root.nowMs();
+    var found = false;
+    // Update task's columnId based on panel's position/index
+    var targetPanel = null;
+    for (var p = 0; p < root.panels.length; p++) {
+      if (root.panels[p].id === panelIdStr) { targetPanel = root.panels[p]; break; }
+    }
+    if (!targetPanel) return false;
+    // Find panel index within its board
+    var boardPanels = root.panelsForBoard(targetPanel.boardId);
+    var panelIndex = -1;
+    for (var i = 0; i < boardPanels.length; i++) {
+      if (boardPanels[i].id === panelIdStr) { panelIndex = i; break; }
+    }
+    if (panelIndex === -1) return false;
+    // Use a columnId based on panel index (q1, q2, q3, q4, etc.)
+    var columnId = Model.COLUMNS[panelIndex] || "q" + (panelIndex + 1);
+    root.tasks = root.tasks.map(function(task) {
+      if (task.id !== taskIdStr || task.boardId !== targetPanel.boardId) return task;
+      found = true;
+      var copy = {};
+      for (var key in task) if (Object.prototype.hasOwnProperty.call(task, key)) copy[key] = task[key];
+      copy.columnId = columnId;
+      copy.completedAt = null;
+      copy.updatedAt = now;
+      return copy;
+    });
+    if (!found) return false;
+    // Add task to panel's taskIds if not already there (for manual order)
+    var panelFound = false;
+    root.panels = root.panels.map(function(panel) {
+      if (panel.id !== panelIdStr) return panel;
+      panelFound = true;
+      var copy = {};
+      for (var key in panel) if (Object.prototype.hasOwnProperty.call(panel, key)) copy[key] = panel[key];
+      if (copy.taskIds.indexOf(taskIdStr) === -1) copy.taskIds = copy.taskIds.concat([taskIdStr]);
+      return copy;
+    });
+    if (!panelFound) return false;
+    root.bump();
+    root.saveNow();
+    return true;
+  }
+
   // ---- Eisenhower task board ----
   function tasksForColumn(columnId) {
     if (Model.COLUMNS.indexOf(String(columnId || "")) === -1) return [];
@@ -518,7 +768,17 @@ Item {
 
   function allOpenTasks() {
     var output = [];
-    for (var i = 0; i < Model.COLUMNS.length; i++) output = output.concat(root.tasksForColumn(Model.COLUMNS[i]));
+    var panels = root.panelsForBoard(root.activeBoardId);
+    for (var i = 0; i < panels.length; i++) {
+      var panel = panels[i];
+      var panelTasks = root.tasks.filter(function(task) {
+        if (task.boardId !== panel.boardId || task.completedAt) return false;
+        // Basic filter - could be enhanced to match panel filters
+        return true;
+      });
+      output = output.concat(panelTasks);
+    }
+    output.sort(function(a, b) { return a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)); });
     return output;
   }
 
@@ -1008,6 +1268,7 @@ Item {
     var blank = Model.blankState();
     root.settings = blank.settings;
     root.boards = blank.boards;
+    root.panels = blank.panels;
     root.tasks = blank.tasks;
     root.sessions = blank.sessions;
     root.activeBoardId = blank.activeBoardId;
@@ -1206,6 +1467,7 @@ Item {
       schemaVersion: Model.SCHEMA_VERSION,
       settings: root.settings,
       boards: root.boards,
+      panels: root.panels,
       tasks: root.tasks,
       sessions: root.sessions,
       activeBoardId: root.activeBoardId,
@@ -1250,6 +1512,7 @@ Item {
   function applyState(state) {
     root.settings = state.settings;
     root.boards = state.boards;
+    root.panels = state.panels || [];
     root.tasks = state.tasks;
     root.sessions = state.sessions;
     root.activeBoardId = state.activeBoardId;

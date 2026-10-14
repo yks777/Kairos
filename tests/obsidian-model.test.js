@@ -5,23 +5,43 @@ const ObsidianModel = loadQmlLibrary("logic/ObsidianModel.js");
 
 const date = new Date(2026, 9, 12, 9, 7);
 
-test("daily note paths use vault, folder, year, month, and local date", () => {
-  const settings = { vaultPath: "/home/user/Notes Vault", dailyNotesFolder: "Daily Notes" };
+test("daily note paths use diary folder, year, month, and local date", () => {
+  const diaryPath = "/home/user/Notes Vault/Daily Notes";
+  const vaultRoot = "/home/user/Notes Vault";
   assert.equal(
-    ObsidianModel.resolveDailyNotePath(settings, date),
+    ObsidianModel.resolveDailyNotePath(diaryPath, date),
     "/home/user/Notes Vault/Daily Notes/2026/10/2026-10-12.md"
   );
   assert.equal(
-    ObsidianModel.relativeDailyNotePath(settings, date),
+    ObsidianModel.relativeDailyNotePath(diaryPath, vaultRoot, date),
     "Daily Notes/2026/10/2026-10-12.md"
+  );
+  assert.equal(
+    ObsidianModel.relativeDailyNotePath(vaultRoot, vaultRoot, date),
+    "2026/10/2026-10-12.md"
   );
   assert.equal(ObsidianModel.parentPath("/home/user/Vault/a/b.md"), "/home/user/Vault/a");
 });
 
-test("daily path resolution rejects traversal and non-absolute vault paths", () => {
-  assert.equal(ObsidianModel.resolveDailyNotePath({ vaultPath: "relative", dailyNotesFolder: "Daily" }, date), "");
-  assert.equal(ObsidianModel.resolveDailyNotePath({ vaultPath: "/vault", dailyNotesFolder: "../outside" }, date), "");
-  assert.equal(ObsidianModel.resolveDailyNotePath({ vaultPath: "/vault/../outside", dailyNotesFolder: "Daily" }, date), "");
+test("vault name defaults to vault root basename and supports an override", () => {
+  assert.equal(ObsidianModel.vaultName("/home/user/Notes Vault", ""), "Notes Vault");
+  assert.equal(ObsidianModel.vaultName("/home/user/Notes Vault", "Custom Name"), "Custom Name");
+  assert.equal(ObsidianModel.vaultName("", ""), "");
+  assert.equal(ObsidianModel.vaultName("", "Custom"), "Custom");
+  assert.equal(ObsidianModel.vaultName("/home/yks/Obsidian/Meu-segundo-cerebro", ""), "Meu-segundo-cerebro");
+});
+
+test("relative path rejects diary folders outside the vault root", () => {
+  assert.equal(
+    ObsidianModel.relativeDailyNotePath("/vault/Daily Notes", "/other/vault", date),
+    ""
+  );
+});
+
+test("daily path resolution rejects traversal and non-absolute diary paths", () => {
+  assert.equal(ObsidianModel.resolveDailyNotePath("relative", date), "");
+  assert.equal(ObsidianModel.resolveDailyNotePath("/vault/../outside", date), "");
+  assert.equal(ObsidianModel.resolveDailyNotePath("", date), "");
 });
 
 test("built-in daily note template is exact and uses the requested Portuguese metadata", () => {

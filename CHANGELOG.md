@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Simplified Obsidian configuration from `vaultPath` + `dailyNotesFolder` to a single `diaryPath` field. The plugin now auto-detects the Obsidian vault root by searching for a `.obsidian` directory, derives the vault name from it (with an optional manual override), and computes the Obsidian URI relative path automatically. State schema bumped to 5 with automatic migration from v3/v4 settings. Updated SettingsView, ObsidianService, and ObsidianModel.
+
 ## 1.0.0
 
 - Added the Kairos plugin foundation, clock and conditional timer bar widget, standalone panel shell, reusable UI primitives, state persistence, and pure logic tests.

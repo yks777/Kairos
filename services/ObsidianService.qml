@@ -37,6 +37,8 @@ Item {
   property string pendingAddText: ""
   property string pendingAddDateKey: ""
   property string observedObsidianConfig: ""
+  property string vaultRoot: ""
+  property bool vaultRootReady: false
 
   readonly property string writeScript: localPath(Qt.resolvedUrl("../scripts/obsidian-write"))
   readonly property bool obsidianEnabled: !!(root.service && root.service.settings && root.service.settings.obsidian
@@ -49,15 +51,29 @@ Item {
   }
 
   function testConnection() {
-    var path = String(root.obsidianSettings().vaultPath || "").trim();
+    var path = String(root.obsidianSettings().diaryPath || "").trim();
     if (path === "" || path.charAt(0) !== "/") {
-      root.testStatus = "Enter an absolute vault path before testing.";
+      root.testStatus = "Enter an absolute diary folder path before testing.";
       root.bumpService();
       return;
     }
     testProc.command = ["python3", "-c",
       "import os,sys; p=sys.argv[1]; sys.exit(0 if os.path.isdir(p) and os.access(p, os.R_OK | os.W_OK) else 1)", path];
     testProc.running = true;
+  }
+
+  function detectVaultRoot() {
+    root.vaultRootReady = false;
+    root.vaultRoot = "";
+    var path = String(root.obsidianSettings().diaryPath || "").trim();
+    if (!path || path.charAt(0) !== "/") {
+      root.vaultRootReady = true;
+      root.bumpService();
+      return;
+    }
+    vaultRootProc.command = ["python3", "-c",
+      "import os,sys\np=os.path.normpath(sys.argv[1])\nwhile True:\n    if os.path.isdir(os.path.join(p,'.obsidian')):\n        print(p)\n        sys.exit(0)\n    parent=os.path.dirname(p)\n    if parent==p:\n        break\n    p=parent\nsys.exit(1)", path];
+    vaultRootProc.running = true;
   }
 
   function obsidianSettings() {
@@ -74,7 +90,10 @@ Item {
     var key = root.obsidianConfigKey();
     if (key === root.observedObsidianConfig) return;
     root.observedObsidianConfig = key;
-    if (root.obsidianEnabled && root.service && root.service.stateLoaded) root.loadNote(new Date());
+    if (root.obsidianEnabled && root.service && root.service.stateLoaded) {
+      root.detectVaultRoot();
+      root.loadNote(new Date());
+    }
     else if (!root.obsidianEnabled) root.clearNote();
   }
 
@@ -102,6 +121,8 @@ Item {
     root.pendingTaskAdd = false;
     root.pendingAddText = "";
     root.pendingAddDateKey = "";
+    root.vaultRoot = "";
+    root.vaultRootReady = false;
     root.bumpService();
   }
 
@@ -115,7 +136,7 @@ Item {
 
   function loadForDate(date, openAfterLoad) {
     var config = root.obsidianSettings();
-    var path = ObsidianModel.resolveDailyNotePath(config, date);
+    var path = ObsidianModel.resolveDailyNotePath(config.diaryPath, date);
     var key = ObsidianModel.dateKey(date);
     if (!path || !key) {
       root.currentDateKey = key;
@@ -127,7 +148,7 @@ Item {
       root.pendingOpen = false;
       root.pendingOpenPath = "";
       root.pendingOpenDate = null;
-      root.setError("Set an absolute Obsidian vault path and a safe daily-notes folder.");
+      root.setError("Set an absolute Obsidian diary folder path in Settings.");
       return;
     }
     if (root.currentPath === path && root.currentDateKey === key && root.noteLoaded) {
@@ -165,7 +186,7 @@ Item {
     if (!root.obsidianEnabled) return [];
     var date = new Date();
     var key = ObsidianModel.dateKey(date);
-    var path = ObsidianModel.resolveDailyNotePath(root.obsidianSettings(), date);
+    var path = ObsidianModel.resolveDailyNotePath(root.obsidianSettings().diaryPath, date);
     if (!key || !path) return [];
     if (root.todayTaskDateKey !== key || root.todayTaskPath !== path) {
       root.todayTaskDateKey = key;
@@ -234,8 +255,9 @@ Item {
   function openOrCreate(date) {
     if (!root.obsidianEnabled) return;
     var config = root.obsidianSettings();
-    if (!ObsidianModel.vaultName(config.vaultPath, config.vaultName)) {
-      root.setError("Set your Obsidian vault path in Settings before opening daily notes.");
+    var diaryPath = String(config.diaryPath || "").trim();
+    if (!diaryPath || diaryPath.charAt(0) !== "/") {
+      root.setError("Set an absolute Obsidian diary folder path in Settings.");
       return;
     }
     root.loadForDate(date, true);
@@ -243,13 +265,22 @@ Item {
 
   function finishOpenRequest() {
     if (!root.pendingOpen || root.pendingOpenPath !== root.currentPath) return;
+    if (!root.vaultRootReady) {
+      root.detectVaultRoot();
+      return;
+    }
+    if (!root.vaultRoot) {
+      root.pendingOpen = false;
+      root.setError("Could not find the Obsidian vault root (no .obsidian directory near the diary folder). The daily note was loaded, but it could not be opened in Obsidian. Set a vault name in Settings if your vault uses a different directory name.");
+      return;
+    }
     if (root.fileMissing) {
       root.beginCreate(root.pendingOpenDate, "");
       return;
     }
     var settings = root.obsidianSettings();
-    var relativePath = ObsidianModel.relativeDailyNotePath(settings, root.pendingOpenDate || new Date());
-    var vault = ObsidianModel.vaultName(settings.vaultPath, settings.vaultName);
+    var relativePath = ObsidianModel.relativeDailyNotePath(settings.diaryPath, root.vaultRoot, root.pendingOpenDate || new Date());
+    var vault = ObsidianModel.vaultName(root.vaultRoot, settings.vaultName);
     var uri = ObsidianModel.obsidianUri(vault, relativePath);
     if (!uri) {
       root.pendingOpen = false;
@@ -266,7 +297,7 @@ Item {
   function beginCreate(date, initialTask) {
     if (!root.obsidianEnabled) return;
     var config = root.obsidianSettings();
-    var path = ObsidianModel.resolveDailyNotePath(config, date);
+    var path = ObsidianModel.resolveDailyNotePath(config.diaryPath, date);
     var key = ObsidianModel.dateKey(date);
     if (!path || !key) {
       root.setError("The daily note path is invalid.");
@@ -448,9 +479,31 @@ Item {
     id: testProc
     onExited: function(exitCode) {
       root.testStatus = exitCode === 0
-        ? "Vault directory is readable and writable."
-        : "Vault directory does not exist or is not readable and writable.";
+        ? "Diary folder is readable and writable."
+        : "Diary folder does not exist or is not readable and writable.";
       root.bumpService();
+    }
+  }
+
+  Process {
+    id: vaultRootProc
+    property string output: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: vaultRootProc.output = text
+    }
+    stderr: StdioCollector {}
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.vaultRoot = String(vaultRootProc.output || "").trim();
+      } else {
+        root.vaultRoot = "";
+      }
+      root.vaultRootReady = true;
+      root.bumpService();
+      if (root.pendingOpen && root.pendingOpenPath === root.currentPath) {
+        root.finishOpenRequest();
+      }
     }
   }
 
@@ -521,12 +574,18 @@ Item {
     target: root.service
     function onSettingsChanged() { root.handleSettingsChanged(); }
     function onStateLoadedChanged() {
-      if (root.obsidianEnabled && root.service && root.service.stateLoaded) root.loadNote(new Date());
+      if (root.obsidianEnabled && root.service && root.service.stateLoaded) {
+        root.detectVaultRoot();
+        root.loadNote(new Date());
+      }
     }
   }
 
   Component.onCompleted: {
     root.observedObsidianConfig = root.obsidianConfigKey();
-    if (root.obsidianEnabled && root.service && root.service.stateLoaded) root.loadNote(new Date());
+    if (root.obsidianEnabled && root.service && root.service.stateLoaded) {
+      root.detectVaultRoot();
+      root.loadNote(new Date());
+    }
   }
 }

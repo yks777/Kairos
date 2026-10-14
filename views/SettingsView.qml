@@ -112,9 +112,8 @@ Item {
         Section {
           title: "Obsidian"
           ToggleRow { label: "Enabled"; checked: root.value("obsidian", "enabled", false); onToggled: function(v) { root.update("obsidian", { enabled: v }); } }
-          PathRow { label: "Vault path"; mode: "directory"; value: root.value("obsidian", "vaultPath", ""); onCommit: function(v) { root.update("obsidian", { vaultPath: v }); } }
-          TextRow { label: "Daily notes folder"; value: root.value("obsidian", "dailyNotesFolder", "Daily Notes"); onCommit: function(v) { root.update("obsidian", { dailyNotesFolder: v }); } }
-          TextRow { label: "Vault name"; value: root.value("obsidian", "vaultName", ""); onCommit: function(v) { root.update("obsidian", { vaultName: v }); } }
+          PathRow { label: "Diary folder"; mode: "directory"; value: root.value("obsidian", "diaryPath", ""); onCommit: function(v) { root.update("obsidian", { diaryPath: v }); } }
+          TextRow { label: "Vault name (optional)"; value: root.value("obsidian", "vaultName", ""); onCommit: function(v) { root.update("obsidian", { vaultName: v }); } }
           PathRow { label: "Static template"; mode: "file"; value: root.value("obsidian", "templatePath", ""); onCommit: function(v) { root.update("obsidian", { templatePath: v }); } }
           FlowButton { text: "Test connection"; onClicked: if (root.service) root.service.obsidianTestConnection() }
           Text { textFormat: Text.PlainText; text: root.service ? root.service.obsidianTestStatus : ""; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; Layout.fillWidth: true }

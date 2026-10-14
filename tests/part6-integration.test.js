@@ -6,16 +6,17 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
 
-test("the panel hosts the Social and Settings views and BarWidget loads it via Loader", () => {
+test("the panel hosts the Social and Settings views and is loaded standalone by the shell", () => {
   const panel = read("Panel.qml");
   const widget = read("BarWidget.qml");
   assert.match(panel, /SocialView\s*\{/);
   assert.match(panel, /SettingsView\s*\{/);
   assert.match(panel, /root\.currentView\s*===\s*"social"/);
   assert.match(panel, /root\.currentView\s*===\s*"settings"/);
-  // BarWidget should load Panel.qml internally via Loader (per Omarchy documentation)
-  assert.match(widget, /\bLoader\s*\{/);
-  assert.match(widget, /source:\s*Qt\.resolvedUrl\(["']Panel\.qml["']\)/);
+  // Panel.qml is loaded standalone by the shell panel-loader, not via BarWidget Loader.
+  assert.equal(/\bLoader\s*\{/.test(widget), false);
+  assert.match(panel, /barShim/);
+  assert.match(panel, /KeyboardPanel\s*\{/);
 });
 
 test("Settings contains the requested twelve sections and service integrations", () => {
