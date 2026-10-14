@@ -1,6 +1,6 @@
 .pragma library
 
-var SCHEMA_VERSION = 3;
+var SCHEMA_VERSION = 5;
 var MAX_SAFE_INTEGER = 9007199254740991;
 var COLUMNS = ["q1", "q2", "q3", "q4"];
 var DEFAULT_COLUMN_LABELS = {
@@ -12,6 +12,10 @@ var DEFAULT_COLUMN_LABELS = {
 var MARKET_CURRENCIES = ["USD", "EUR", "BRL", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "NZD", "SGD", "KRW", "ZAR"];
 var DEFAULT_MARKET_CURRENCIES = ["USD", "EUR", "BRL"];
 var DEFAULT_WATCHLIST_SYMBOLS = ["AAPL", "NVDA", "BTC"];
+
+var PANEL_TASK_DONE_STATE = { All: 1, Done: 2, UnDone: 3 };
+var PANEL_SCHEDULED_STATE = { All: 1, Scheduled: 2, NotScheduled: 3 };
+var PANEL_SORT_FIELD = { DueDate: "dueDate", Created: "created", Title: "title", TimeEstimate: "timeEstimate" };
 
 function defaultSettings() {
   return {
@@ -40,9 +44,8 @@ function defaultSettings() {
     },
     obsidian: {
       enabled: false,
-      vaultPath: "",
+      diaryPath: "",
       vaultName: "",
-      dailyNotesFolder: "Daily Notes",
       templatePath: ""
     },
     markets: {
@@ -90,6 +93,24 @@ function defaultBoards() {
   return [{ id: "board-life", title: "Stay Hard", createdAt: now, updatedAt: now }];
 }
 
+function defaultBoardPanels(boardId) {
+  var now = Date.now();
+  return [
+    { id: uid("panel"), boardId: boardId, title: "Backlog", createdAt: now, updatedAt: now,
+      includedTagIds: [], excludedTagIds: [], taskDoneState: PANEL_TASK_DONE_STATE.UnDone,
+      scheduledState: PANEL_SCHEDULED_STATE.All, sortBy: null, sortDir: "asc", taskIds: [] },
+    { id: uid("panel"), boardId: boardId, title: "Todo", createdAt: now, updatedAt: now,
+      includedTagIds: [], excludedTagIds: [], taskDoneState: PANEL_TASK_DONE_STATE.UnDone,
+      scheduledState: PANEL_SCHEDULED_STATE.All, sortBy: null, sortDir: "asc", taskIds: [] },
+    { id: uid("panel"), boardId: boardId, title: "In Progress", createdAt: now, updatedAt: now,
+      includedTagIds: [], excludedTagIds: [], taskDoneState: PANEL_TASK_DONE_STATE.UnDone,
+      scheduledState: PANEL_SCHEDULED_STATE.All, sortBy: null, sortDir: "asc", taskIds: [] },
+    { id: uid("panel"), boardId: boardId, title: "Done", createdAt: now, updatedAt: now,
+      includedTagIds: [], excludedTagIds: [], taskDoneState: PANEL_TASK_DONE_STATE.Done,
+      scheduledState: PANEL_SCHEDULED_STATE.All, sortBy: null, sortDir: "asc", taskIds: [] }
+  ];
+}
+
 function blankTimer() {
   return {
     mode: "idle",
@@ -111,10 +132,17 @@ function blankTimer() {
 }
 
 function blankState() {
+  var boards = defaultBoards();
+  var panels = [];
+  for (var bi = 0; bi < boards.length; bi++) {
+    var defPanels = defaultBoardPanels(boards[bi].id);
+    for (var pi = 0; pi < defPanels.length; pi++) panels.push(defPanels[pi]);
+  }
   return {
     schemaVersion: SCHEMA_VERSION,
     settings: defaultSettings(),
-    boards: defaultBoards(),
+    boards: boards,
+    panels: panels,
     tasks: [],
     sessions: [],
     activeBoardId: "board-life",
@@ -185,13 +213,31 @@ function structurallyEqual(left, right) {
   return true;
 }
 
+function migrateObsidianSettings(settings) {
+  if (!isPlainObject(settings) || !isPlainObject(settings.obsidian)) return;
+  var obs = settings.obsidian;
+  if (!Object.prototype.hasOwnProperty.call(obs, "vaultPath") && !Object.prototype.hasOwnProperty.call(obs, "dailyNotesFolder")) return;
+  var vaultPath = String(obs.vaultPath || "").trim();
+  var folder = String(obs.dailyNotesFolder || "").trim();
+  if (vaultPath && vaultPath.charAt(0) === "/") {
+    var cleanVault = vaultPath.replace(/\/+$/, "");
+    var cleanFolder = folder.replace(/^\/+/, "").replace(/\/+$/, "");
+    if (cleanFolder) obs.diaryPath = cleanVault + "/" + cleanFolder;
+    else obs.diaryPath = cleanVault;
+  }
+  delete obs.vaultPath;
+  delete obs.dailyNotesFolder;
+}
+
 function migrate(raw) {
   if (!isPlainObject(raw)) return raw;
   var version = Number(raw.schemaVersion);
   if (version === 2) {
+    var v2Settings = JSON.parse(JSON.stringify(isPlainObject(raw.settings) ? raw.settings : {}));
+    migrateObsidianSettings(v2Settings);
     return {
       schemaVersion: SCHEMA_VERSION,
-      settings: raw.settings,
+      settings: v2Settings,
       boards: raw.boards,
       tasks: raw.tasks,
       sessions: raw.sessions,
@@ -277,9 +323,10 @@ function sanitizeSettings(raw) {
     ? settings.calendar.mapsProvider : defaults.calendar.mapsProvider;
 
   settings.obsidian.enabled = settings.obsidian.enabled === true;
-  settings.obsidian.vaultPath = boundedString(settings.obsidian.vaultPath, "", 1024);
+  var diaryPath = boundedString(settings.obsidian.diaryPath, "", 1024);
+  if (diaryPath !== "" && diaryPath.charAt(0) !== "/") diaryPath = "";
+  settings.obsidian.diaryPath = diaryPath;
   settings.obsidian.vaultName = boundedString(settings.obsidian.vaultName, "", 128);
-  settings.obsidian.dailyNotesFolder = boundedString(settings.obsidian.dailyNotesFolder, defaults.obsidian.dailyNotesFolder, 256);
   settings.obsidian.templatePath = boundedString(settings.obsidian.templatePath, "", 1024);
 
   var currencyList = [];
@@ -387,6 +434,34 @@ function sanitizeBoard(raw) {
   };
 }
 
+function sanitizeBoardPanel(raw, boardId) {
+  if (!isPlainObject(raw)) return null;
+  var now = Date.now();
+  var doneState = boundedInteger(raw.taskDoneState, PANEL_TASK_DONE_STATE.All, 1, 3);
+  var scheduledState = boundedInteger(raw.scheduledState, PANEL_SCHEDULED_STATE.All, 1, 3);
+  var sortBy = raw.sortBy;
+  var validSortFields = [PANEL_SORT_FIELD.DueDate, PANEL_SORT_FIELD.Created, PANEL_SORT_FIELD.Title, PANEL_SORT_FIELD.TimeEstimate];
+  if (sortBy !== null && sortBy !== undefined && validSortFields.indexOf(sortBy) === -1) sortBy = null;
+  var sortDir = raw.sortDir === "desc" ? "desc" : "asc";
+  var includedTagIds = Array.isArray(raw.includedTagIds) ? raw.includedTagIds.filter(function(t) { return typeof t === "string"; }) : [];
+  var excludedTagIds = Array.isArray(raw.excludedTagIds) ? raw.excludedTagIds.filter(function(t) { return typeof t === "string"; }) : [];
+  var taskIds = Array.isArray(raw.taskIds) ? raw.taskIds.filter(function(t) { return typeof t === "string"; }) : [];
+  return {
+    id: boundedString(raw.id, uid("panel"), 80),
+    boardId: boardId,
+    title: boundedString(raw.title, "Column", 48),
+    createdAt: boundedInteger(raw.createdAt, now, 0, MAX_SAFE_INTEGER),
+    updatedAt: boundedInteger(raw.updatedAt, now, 0, MAX_SAFE_INTEGER),
+    includedTagIds: includedTagIds,
+    excludedTagIds: excludedTagIds,
+    taskDoneState: doneState,
+    scheduledState: scheduledState,
+    sortBy: sortBy,
+    sortDir: sortDir,
+    taskIds: taskIds
+  };
+}
+
 function sanitizeTask(raw, boardIds) {
   if (!isPlainObject(raw) || typeof raw.title !== "string" || raw.title.trim() === "") return null;
   var now = Date.now();
@@ -480,6 +555,25 @@ function sanitizeState(raw) {
     var source = raw;
     var repaired = originalVersion !== SCHEMA_VERSION;
     if (originalVersion === 1 || originalVersion === 2) source = migrate(raw);
+    else if (originalVersion === 3 || originalVersion === 4) {
+      // Migration from v3 to v4: add default panels for existing boards
+      source = JSON.parse(JSON.stringify(raw));
+      source.schemaVersion = SCHEMA_VERSION;
+      if (originalVersion === 3) {
+        if (Array.isArray(source.boards) && (!Array.isArray(source.panels) || source.panels.length === 0)) {
+          source.panels = [];
+          for (var bi = 0; bi < source.boards.length; bi++) {
+            var b = source.boards[bi];
+            if (b && b.id) {
+              var defPanels = defaultBoardPanels(b.id);
+              for (var pi = 0; pi < defPanels.length; pi++) source.panels.push(defPanels[pi]);
+            }
+          }
+        }
+      }
+      // Migration from v4 to v5: migrate Obsidian settings from vaultPath + dailyNotesFolder to diaryPath
+      migrateObsidianSettings(source.settings);
+    }
     else if (originalVersion !== SCHEMA_VERSION) return { state: blankState(), repaired: true };
 
     var state = blankState();
@@ -503,6 +597,32 @@ function sanitizeState(raw) {
     }
     if (!structurallyEqual(source.boards, boards)) repaired = true;
     var boardIds = boards.map(function(item) { return item.id; });
+
+    var panels = [];
+    if (Array.isArray(source.panels)) {
+      if (source.panels.length > 500) repaired = true;
+      for (var pIdx = 0; pIdx < Math.min(source.panels.length, 500); pIdx++) {
+        var rawPanel = source.panels[pIdx];
+        var panelBoardId = rawPanel && rawPanel.boardId ? String(rawPanel.boardId) : (boardIds[0] || "board-life");
+        if (boardIds.indexOf(panelBoardId) === -1) panelBoardId = boardIds[0] || "board-life";
+        var panel = sanitizeBoardPanel(rawPanel, panelBoardId);
+        if (panel) panels.push(panel);
+        else repaired = true;
+      }
+    } else {
+      repaired = true;
+    }
+    // Ensure each board has at least default panels
+    for (var bIdx = 0; bIdx < boards.length; bIdx++) {
+      var bid = boards[bIdx].id;
+      var boardPanels = panels.filter(function(p) { return p.boardId === bid; });
+      if (boardPanels.length === 0) {
+        var defPanels = defaultBoardPanels(bid);
+        for (var di = 0; di < defPanels.length; di++) panels.push(defPanels[di]);
+        repaired = true;
+      }
+    }
+    if (!structurallyEqual(source.panels, panels)) repaired = true;
 
     var tasks = [];
     if (Array.isArray(source.tasks)) {
@@ -556,6 +676,7 @@ function sanitizeState(raw) {
         || String(source.activeTaskText || "") !== activeTaskText) repaired = true;
 
     state.boards = boards;
+    state.panels = panels;
     state.tasks = tasks;
     state.sessions = sessions;
     state.activeBoardId = activeBoardId;
@@ -597,13 +718,18 @@ if (typeof module !== "undefined") {
     SCHEMA_VERSION: SCHEMA_VERSION,
     COLUMNS: COLUMNS,
     DEFAULT_COLUMN_LABELS: DEFAULT_COLUMN_LABELS,
+    PANEL_TASK_DONE_STATE: PANEL_TASK_DONE_STATE,
+    PANEL_SCHEDULED_STATE: PANEL_SCHEDULED_STATE,
+    PANEL_SORT_FIELD: PANEL_SORT_FIELD,
     defaultSettings: defaultSettings,
     sanitizeSettings: sanitizeSettings,
     sanitizeSettingsSection: sanitizeSettingsSection,
     defaultBoards: defaultBoards,
+    defaultBoardPanels: defaultBoardPanels,
     blankTimer: blankTimer,
     blankState: blankState,
     migrate: migrate,
+    migrateObsidianSettings: migrateObsidianSettings,
     sanitizeSettings: sanitizeSettings,
     sanitizeTimer: sanitizeTimer,
     sanitizeState: sanitizeState,

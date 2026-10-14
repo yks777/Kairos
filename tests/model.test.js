@@ -5,7 +5,7 @@ const Model = loadQmlLibrary("logic/Model.js");
 
 test("blank state has the canonical schema and a default board", () => {
   const state = Model.blankState();
-  assert.equal(state.schemaVersion, 3);
+  assert.equal(state.schemaVersion, 5);
   assert.equal(state.boards[0].id, "board-life");
   assert.equal(state.timer.phase, "stopped");
   assert.equal(state.settings.shortcuts.toggleShortcut, "Super+H");
@@ -34,14 +34,14 @@ test("schema version 1 state migrates into nested Kairos settings", () => {
     timer: Model.blankTimer()
   });
   assert.equal(result.repaired, true);
-  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.schemaVersion, 5);
   assert.equal(result.state.settings.focus.action, "flowtime");
   assert.equal(result.state.settings.focus.focusAction, "flowtime");
   assert.equal(result.state.settings.focus.focusSec, 1800);
   assert.equal(result.state.settings.shortcuts.toggleShortcut, "Super+J");
 });
 
-test("schema version 2 migrates to version 3 without losing tasks or focus preferences", () => {
+test("schema version 2 migrates to version 5 without losing tasks or focus preferences", () => {
   const state = Model.blankState();
   state.schemaVersion = 2;
   state.settings.focus.action = "flowtime";
@@ -53,7 +53,7 @@ test("schema version 2 migrates to version 3 without losing tasks or focus prefe
   state.activeTaskId = "task-1";
   const result = Model.sanitizeState(state);
   assert.equal(result.repaired, true);
-  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.schemaVersion, 5);
   assert.equal(result.state.settings.focus.focusAction, "flowtime");
   assert.equal(result.state.tasks[0].title, "Write plan");
   assert.equal(result.state.activeTaskId, "task-1");
@@ -64,7 +64,7 @@ test("sanitizing invalid input never throws and returns a safe blank state", () 
   assert.doesNotThrow(() => Model.sanitizeState(null));
   const result = Model.sanitizeState(null);
   assert.equal(result.repaired, true);
-  assert.equal(result.state.schemaVersion, 3);
+  assert.equal(result.state.schemaVersion, 5);
   assert.equal(result.state.timer.phase, "stopped");
 });
 
@@ -109,6 +109,58 @@ test("Obsidian task labels persist separately from matrix task IDs", () => {
   assert.equal(result.state.activeTaskText, "Write daily notes");
 });
 
+test("schema version 4 state migrates vaultPath and dailyNotesFolder into diaryPath", () => {
+  const state = Model.blankState();
+  state.schemaVersion = 4;
+  state.settings.obsidian = {
+    enabled: true,
+    vaultPath: "/home/user/Notes Vault",
+    vaultName: "",
+    dailyNotesFolder: "0. YKS/Diario",
+    templatePath: ""
+  };
+  const result = Model.sanitizeState(state);
+  assert.equal(result.repaired, true);
+  assert.equal(result.state.schemaVersion, 5);
+  assert.equal(result.state.settings.obsidian.diaryPath, "/home/user/Notes Vault/0. YKS/Diario");
+  assert.equal(result.state.settings.obsidian.vaultPath, undefined);
+  assert.equal(result.state.settings.obsidian.dailyNotesFolder, undefined);
+  assert.equal(result.state.settings.obsidian.vaultName, "");
+});
+
+test("migrateObsidianSettings constructs diaryPath from vaultPath and dailyNotesFolder", () => {
+  const settings = {
+    obsidian: {
+      enabled: true,
+      vaultPath: "/home/yks/Obsidian/Meu-segundo-cerebro",
+      dailyNotesFolder: "0. YKS/Diario",
+      vaultName: "My Vault",
+      templatePath: ""
+    }
+  };
+  Model.migrateObsidianSettings(settings);
+  assert.equal(settings.obsidian.diaryPath, "/home/yks/Obsidian/Meu-segundo-cerebro/0. YKS/Diario");
+  assert.equal(settings.obsidian.vaultPath, undefined);
+  assert.equal(settings.obsidian.dailyNotesFolder, undefined);
+  assert.equal(settings.obsidian.vaultName, "My Vault");
+  assert.equal(settings.obsidian.templatePath, "");
+
+  const settingsNoFolder = { obsidian: { vaultPath: "/vault", dailyNotesFolder: "" } };
+  Model.migrateObsidianSettings(settingsNoFolder);
+  assert.equal(settingsNoFolder.obsidian.diaryPath, "/vault");
+  assert.equal(settingsNoFolder.obsidian.vaultPath, undefined);
+
+  const settingsTrailingSlash = { obsidian: { vaultPath: "/vault/", dailyNotesFolder: "Diary/" } };
+  Model.migrateObsidianSettings(settingsTrailingSlash);
+  assert.equal(settingsTrailingSlash.obsidian.diaryPath, "/vault/Diary");
+});
+
+test("migrateObsidianSettings is a no-op when old fields are absent", () => {
+  const settings = { obsidian: { diaryPath: "/home/user/diary" } };
+  Model.migrateObsidianSettings(settings);
+  assert.equal(settings.obsidian.diaryPath, "/home/user/diary");
+});
+
 test("market and stats settings get bounded defaults and a persistent starter watchlist", () => {
   const settings = Model.sanitizeSettings({});
   assert.deepEqual(settings.markets.watchlist.symbols, ["AAPL", "NVDA", "BTC"]);
@@ -137,13 +189,12 @@ test("market and stats settings get bounded defaults and a persistent starter wa
 test("calendar and Obsidian settings are bounded and use safe defaults", () => {
   const settings = Model.sanitizeSettings({
     calendar: { agendaDays: 999, leadMinutes: -1, timeFormat: "arbitrary", mapsProvider: "file://" },
-    obsidian: { enabled: "yes", vaultPath: "/home/test/vault", dailyNotesFolder: "Daily" }
+    obsidian: { enabled: "yes", diaryPath: "/home/test/vault/diary" }
   });
   assert.equal(settings.calendar.agendaDays, 60);
   assert.equal(settings.calendar.leadMinutes, 0);
   assert.equal(settings.calendar.timeFormat, "Match khal");
   assert.equal(settings.calendar.mapsProvider, "Google Maps");
   assert.equal(settings.obsidian.enabled, false);
-  assert.equal(settings.obsidian.vaultPath, "/home/test/vault");
-  assert.equal(settings.obsidian.dailyNotesFolder, "Daily");
+  assert.equal(settings.obsidian.diaryPath, "/home/test/vault/diary");
 });

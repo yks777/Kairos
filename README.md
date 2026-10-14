@@ -41,7 +41,7 @@ The global **Notifications → Sound** setting controls an additional local syst
 
 ## Obsidian writes
 
-Obsidian is off until enabled and given an absolute vault path. Selecting a date is the explicit action that opens or creates its daily note; reading today's tasks does not open Obsidian. Static templates are read as plain text; Templater is never invoked. `scripts/obsidian-write` writes note data received on standard input using a temporary file and atomic replacement.
+Obsidian is off until enabled and given an absolute diary folder path. The plugin auto-detects the vault root by finding a `.obsidian` directory near the diary folder and derives the vault name from it, with an optional manual override. Selecting a date is the explicit action that opens or creates its daily note; reading today's tasks does not open Obsidian. Static templates are read as plain text; Templater is never invoked. `scripts/obsidian-write` writes note data received on standard input using a temporary file and atomic replacement.
 
 ## Markets data
 

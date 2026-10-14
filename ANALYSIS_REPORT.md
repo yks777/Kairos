@@ -311,7 +311,7 @@ idle → running → [paused ↔ running] → [break → running] → stopped
 1. **Focus**: Técnica, duração foco, breaks (short/long), intervalo
 2. **Flowtime**: Modo break (trad/prop), duração
 3. **Calendar**: Notificações, lead time, sync
-4. **Obsidian**: Vault path, daily folder, template
+4. **Obsidian**: Diary folder, vault name, template
 5. **Markets**: Moeda padrão, refresh interval
 6. **Social**: Rede habilitadas, notificações
 7. **Email**: Contas IMAP/SMTP com campos

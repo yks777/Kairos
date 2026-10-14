@@ -31,40 +31,22 @@ function cleanAbsolutePath(value) {
   return "/" + clean.join("/");
 }
 
-function cleanRelativeFolder(value) {
-  var folder = String(value === undefined || value === null ? DEFAULT_DAILY_NOTES_FOLDER : value).trim();
-  if (folder.indexOf("\u0000") !== -1 || folder.indexOf("\\") !== -1) return null;
-  while (folder.charAt(0) === "/") folder = folder.slice(1);
-  while (folder.charAt(folder.length - 1) === "/") folder = folder.slice(0, -1);
-  if (folder === "") return "";
-  var parts = folder.split("/");
-  var clean = [];
-  for (var i = 0; i < parts.length; i++) {
-    if (parts[i] === "" || parts[i] === ".") continue;
-    if (parts[i] === "..") return null;
-    clean.push(parts[i]);
-  }
-  return clean.join("/");
+function resolveDailyNotePath(diaryPath, date) {
+  var diary = cleanAbsolutePath(diaryPath);
+  var input = date instanceof Date ? date : new Date(date);
+  if (!diary || isNaN(input.getTime())) return "";
+  return diary + "/" + String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1) + "/" + dateKey(input) + ".md";
 }
 
-function resolveDailyNotePath(settings, date) {
-  var config = settings || {};
-  var vault = cleanAbsolutePath(config.vaultPath);
-  var folder = cleanRelativeFolder(config.dailyNotesFolder);
+function relativeDailyNotePath(diaryPath, vaultRoot, date) {
+  var diary = cleanAbsolutePath(diaryPath);
+  var root = cleanAbsolutePath(vaultRoot);
   var input = date instanceof Date ? date : new Date(date);
-  if (!vault || folder === null || isNaN(input.getTime())) return "";
-  var relative = folder ? folder + "/" : "";
-  relative += String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1) + "/" + dateKey(input) + ".md";
-  return (vault === "/" ? "" : vault) + "/" + relative;
-}
-
-function relativeDailyNotePath(settings, date) {
-  var config = settings || {};
-  var folder = cleanRelativeFolder(config.dailyNotesFolder);
-  var input = date instanceof Date ? date : new Date(date);
-  if (folder === null || isNaN(input.getTime())) return "";
-  return (folder ? folder + "/" : "") + String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1)
-    + "/" + dateKey(input) + ".md";
+  if (!diary || !root || isNaN(input.getTime())) return "";
+  if (diary === root) return String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1) + "/" + dateKey(input) + ".md";
+  if (diary.indexOf(root + "/") !== 0) return "";
+  var relative = diary.slice(root.length + 1);
+  return relative + "/" + String(input.getFullYear()) + "/" + pad2(input.getMonth() + 1) + "/" + dateKey(input) + ".md";
 }
 
 function parentPath(path) {
@@ -74,10 +56,10 @@ function parentPath(path) {
   return slash <= 0 ? "/" : value.slice(0, slash);
 }
 
-function vaultName(vaultPath, configuredName) {
+function vaultName(vaultRoot, configuredName) {
   var explicit = String(configuredName || "").trim();
   if (explicit) return explicit;
-  var path = cleanAbsolutePath(vaultPath);
+  var path = cleanAbsolutePath(vaultRoot);
   if (!path || path === "/") return "";
   return path.slice(path.lastIndexOf("/") + 1);
 }
@@ -208,7 +190,6 @@ if (typeof module !== "undefined") {
     dateKey: dateKey,
     formatDateTime: formatDateTime,
     cleanAbsolutePath: cleanAbsolutePath,
-    cleanRelativeFolder: cleanRelativeFolder,
     resolveDailyNotePath: resolveDailyNotePath,
     relativeDailyNotePath: relativeDailyNotePath,
     parentPath: parentPath,

@@ -6,17 +6,33 @@ import qs.Ui
 import "components"
 import "views"
 
-// Standalone Kairos panel. Loaded by BarWidget.qml's Loader;
-// the shell panel-loader does not load this directly.
+// Standalone Kairos panel, loaded by the shell panel-loader (summon/toggle/hide).
 Panel {
   id: root
   moduleName: "io.github.yks777.kairos"
   manageIpc: false
 
-  // Injected by BarWidget.injectPanel()
+  // Injected by the shell panel-loader.
+  property var shell: null
+  property var manifest: null
+  property var service: null
+  property string omarchyPath: ""
+
   property var anchorItem: null
   property var hostWidget: null
-  property var service: null
+  // Identity the bar uses for the open-panel dot and Tab-switching.
+  readonly property var barIdentity: hostWidget || root
+
+  // Standalone panel has no live bar injected by the shell loader; the shim
+  // satisfies the members KeyboardPanel reads on its open path (position,
+  // barSize, activePopout, requestPopout, releasePopout).
+  readonly property QtObject barShim: QtObject {
+    property string position: "bottom"
+    property int barSize: 0
+    property var activePopout: null
+    function requestPopout(owner) {}
+    function releasePopout(owner) {}
+  }
 
   function pluginId() {
     if (root.manifest && root.manifest.id) return String(root.manifest.id);
@@ -55,7 +71,7 @@ Panel {
 
   function switchPanel(direction) {
     if (root.bar && typeof root.bar.switchPanelFrom === "function")
-      return root.bar.switchPanelFrom(root.hostWidget || root, direction);
+      return root.bar.switchPanelFrom(root.barIdentity, direction);
     return false;
   }
 
@@ -98,9 +114,9 @@ Panel {
 
   KeyboardPanel {
     id: panel
-    anchorItem: root.anchorItem
-    owner: root.hostWidget || root
-    bar: root.bar
+    anchorItem: centerAnchor
+    owner: root.barIdentity
+    bar: root.barShim
     open: root.opened
     centerOnBar: true
     gap: panel.screenH / 2 - panel.barH
@@ -111,6 +127,11 @@ Panel {
       cardContent.implicitHeight + panel.verticalContentInset,
       Math.max(120, panel.screenH - (Style.bar.sizeHorizontal + Style.gapsOut * 2))
     )
+
+    Item {
+      id: centerAnchor
+      anchors.fill: parent
+    }
 
     PanelKeyCatcher {
       id: keyCatcher

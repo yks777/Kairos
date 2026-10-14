@@ -6,11 +6,12 @@
   "author": "Yuri K. S.",
   "license": "MIT",
   "description": "Clock, focus timer, tasks, calendar, Obsidian daily notes, stats, markets, social and email for the Omarchy bar.",
-  "kinds": ["service", "bar-widget"],
+  "kinds": ["service", "bar-widget", "panel"],
   "keepLoaded": true,
   "entryPoints": {
     "service": "Service.qml",
-    "barWidget": "BarWidget.qml"
+    "barWidget": "BarWidget.qml",
+    "panel": "Panel.qml"
   },
   "omarchy": {
     "clonedFrom": "omarchy.clock"

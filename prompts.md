@@ -2469,10 +2469,10 @@ Retorna uma lista normalizada:
 .pragma library
 
 // ---- Resolução de path ----
-// Dado vaultPath, dailyNotesFolder e uma data, retorna o path absoluto
-// <vaultPath>/<dailyNotesFolder>/<YYYY>/<MM>/<YYYY-MM-DD>.md
+// Dado diaryPath (caminho absoluto da pasta de diarios) e uma data, retorna o path absoluto
+// <diaryPath>/<YYYY>/<MM>/<YYYY-MM-DD>.md
 
-function resolveDailyNotePath(vaultPath, folder, date) { /* ... */ }
+function resolveDailyNotePath(diaryPath, date) { /* ... */ }
 
 // ---- Template ----
 // Retorna o conteúdo exato da nota a ser criada, com data/hora preenchida.
@@ -2721,7 +2721,7 @@ Item {
   function loadNote(date) {
     var s = root.service.settings.obsidian;
     if (!s.enabled) return;
-    var path = ObsidianModel.resolveDailyNotePath(s.vaultPath, s.dailyNotesFolder, date);
+    var path = ObsidianModel.resolveDailyNotePath(s.diaryPath, date);
     root.currentPath = path;
     noteFile.path = path;
   }
@@ -2730,7 +2730,7 @@ Item {
 
   function createNote(date, callback) {
     var s = root.service.settings.obsidian;
-    var path = ObsidianModel.resolveDailyNotePath(s.vaultPath, s.dailyNotesFolder, date);
+    var path = ObsidianModel.resolveDailyNotePath(s.diaryPath, date);
     var mkdirCmd = "mkdir -p \"$(dirname \"" + path + "\")\"";
     var content = ObsidianModel.renderTemplate(ObsidianModel.formatDateTime(date));
 
@@ -2764,7 +2764,7 @@ Item {
   function openOrCreate(date) {
     var s = root.service.settings.obsidian;
     if (!s.enabled) return;
-    var path = ObsidianModel.resolveDailyNotePath(s.vaultPath, s.dailyNotesFolder, date);
+    var path = ObsidianModel.resolveDailyNotePath(s.diaryPath, date);
 
     // Verifica existência; se existir, abre. Se não, cria e abre.
     checkProc.path = path;
@@ -2790,13 +2790,15 @@ Item {
 
   function openInObsidian(date) {
     var s = root.service.settings.obsidian;
-    var folder = s.dailyNotesFolder;
+    var diaryPath = s.diaryPath;
+    var vaultRoot = root.vaultRoot;
     var d = date || new Date();
     function p(n) { return (n < 10 ? "0" : "") + n; }
     var y = d.getFullYear();
     var m = p(d.getMonth() + 1);
-    var rel = folder + "/" + y + "/" + m + "/" + y + "-" + m + "-" + p(d.getDate()) + ".md";
-    var uri = ObsidianModel.obsidianUri(s.vaultName, rel);
+    var rel = diaryPath.slice(vaultRoot.length + 1) + "/" + y + "/" + m + "/" + y + "-" + m + "-" + p(d.getDate()) + ".md";
+    var vault = s.vaultName || vaultRoot.slice(vaultRoot.lastIndexOf("/") + 1);
+    var uri = ObsidianModel.obsidianUri(vault, rel);
     Quickshell.execDetached(["xdg-open", uri]);
   }
 
@@ -7794,11 +7796,10 @@ ColumnLayout {
       Layout.fillWidth: true
 
       ToggleRow { label: "Enabled"; checked: root.service ? root.service.settings.obsidian.enabled : false; onToggled: function(v) { if (root.service) root.service.updateSettings("obsidian", { enabled: v }); } }
-      PathRow { label: "Vault path"; value: root.service ? root.service.settings.obsidian.vaultPath : ""; onCommit: function(v) { if (root.service) root.service.updateSettings("obsidian", { vaultPath: v }); } }
-      TextRow { label: "Daily notes folder"; value: root.service ? root.service.settings.obsidian.dailyNotesFolder : "0. YKS/Diario"; onCommit: function(v) { if (root.service) root.service.updateSettings("obsidian", { dailyNotesFolder: v }); } }
-      TextRow { label: "Vault name"; value: root.service ? root.service.settings.obsidian.vaultName : ""; onCommit: function(v) { if (root.service) root.service.updateSettings("obsidian", { vaultName: v }); } }
+      PathRow { label: "Diary folder"; mode: "directory"; value: root.service ? root.service.settings.obsidian.diaryPath : ""; onCommit: function(v) { if (root.service) root.service.updateSettings("obsidian", { diaryPath: v }); } }
+      TextRow { label: "Vault name (optional)"; value: root.service ? root.service.settings.obsidian.vaultName : ""; onCommit: function(v) { if (root.service) root.service.updateSettings("obsidian", { vaultName: v }); } }
       PathRow { label: "Template path"; value: root.service ? root.service.settings.obsidian.templatePath : ""; onCommit: function(v) { if (root.service) root.service.updateSettings("obsidian", { templatePath: v }); } }
-      ToggleRow { label: "Auto-create today"; checked: root.service ? root.service.settings.obsidian.autoCreateToday : false; onToggled: function(v) { if (root.service) root.service.updateSettings("obsidian", { autoCreateToday: v }); } }
+      FlowButton {
 
       FlowButton {
         text: "Test connection"
@@ -8148,10 +8149,10 @@ ColumnLayout {
 
   // ---- Obsidian test connection ----
   function obsidianTestConnection() {
-    // Valida vaultPath, dailyNotesFolder, templatePath, escrita.
+    // Valida diaryPath, templatePath, escrita.
     // Mostra resultado via toast.
     root.notify("obsidian", "Test connection",
-      "Vault path OK. Write access OK.");
+      "Diary folder OK. Write access OK.");
   }
 
   // ---- File picker ----
@@ -8414,11 +8415,10 @@ networks, and email under one surface.
 ## Obsidian setup
 
 1. Open Settings → Obsidian.
-2. Set `vaultPath` to your vault's absolute path.
-3. Set `dailyNotesFolder` (e.g. `0. YKS/Diario`).
-4. Set `vaultName` (e.g. `YKS`).
-5. (Optional) Set `templatePath` to a static template.
-6. Click Test connection.
+2. Set `diaryPath` to your diary folder's absolute path (e.g. `/home/yks/Obsidian/Meu-segundo-cerebro/0. YKS/Diario`).
+3. (Optional) Set `vaultName` if your Obsidian vault name differs from the vault directory name.
+4. (Optional) Set `templatePath` to a static template.
+5. Click Test connection.
 
 ## khal setup
 
@@ -8929,7 +8929,7 @@ Open `views/SettingsView.qml` and verify all 12 sections exist with all their ke
 1. **Focus:** focusAction, focusSec, shortBreakSec, longBreakSec, longBreakInterval.
 2. **Flowtime:** flowBreakMode, flowBreakPct, flowBreakMinSec, flowBreakMaxSec.
 3. **Calendar:** notifications, leadMinutes, agendaDays, timeFormat, mapsProvider, syncIntervalMinutes, syncCommand.
-4. **Obsidian:** enabled, vaultPath, dailyNotesFolder, vaultName, templatePath, autoCreateToday, Test connection button.
+4. **Obsidian:** enabled, diaryPath, vaultName, templatePath, Test connection button.
 5. **Markets:** enabled, refreshMinutes, currency, currencies, upColor, downColor, defaultCurrencyFrom, defaultCurrencyTo, cryptoIds.
 6. **Social:** telegram, whatsapp, signal, discord, matrix, notifyMessages, notifyCalls, showPreview.
 7. **Email:** accounts (add / edit / remove), notifyNew, showPreview.
