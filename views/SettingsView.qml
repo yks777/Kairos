@@ -15,15 +15,13 @@ Item {
   Layout.fillHeight: true
   implicitHeight: Style.space(560)
 
-  readonly property var categories: [
-    { id: "focus", label: "Focus", subtitle: "Timers, breaks and streak." },
-    { id: "calendar", label: "Calendar", subtitle: "Events, sync and maps." },
-    { id: "obsidian", label: "Obsidian", subtitle: "Daily-notes vault integration." },
-    { id: "markets", label: "Markets", subtitle: "Quotes and display currency." },
-    { id: "social", label: "Social", subtitle: "Chat bridges and alerts." },
-    { id: "email", label: "Email", subtitle: "Accounts and keyring passwords." },
-    { id: "system", label: "System", subtitle: "Panel, shortcuts and data file." }
-  ]
+   readonly property var categories: [
+     { id: "focus", label: "Focus", subtitle: "Timers, breaks and streak." },
+     { id: "calendar", label: "Calendar", subtitle: "Events, sync and maps." },
+     { id: "obsidian", label: "Obsidian", subtitle: "Daily-notes vault integration." },
+     { id: "markets", label: "Markets", subtitle: "Quotes and display currency." },
+     { id: "system", label: "System", subtitle: "Panel, shortcuts and data file." }
+   ]
 
   function update(section, patch) {
     if (root.service && typeof root.service.updateSettings === "function")
@@ -258,64 +256,6 @@ Item {
             }
           }
 
-          // ---- Social ----
-          ColumnLayout {
-            spacing: Style.space(12)
-            Layout.fillWidth: true
-            visible: root.selectedCategory === "social"
-            CategoryHeader { heading: "Social"; subtitle: root.categorySubtitle("social") }
-            Section {
-              title: "Social"
-              ToggleRow { label: "Telegram"; checked: root.value("social", "telegram", false); onToggled: function(v) { root.update("social", { telegram: v }); } }
-              ToggleRow { label: "WhatsApp"; checked: root.value("social", "whatsapp", false); onToggled: function(v) { root.update("social", { whatsapp: v }); } }
-              ToggleRow { label: "Signal"; checked: root.value("social", "signal", false); onToggled: function(v) { root.update("social", { signal: v }); } }
-              ToggleRow { label: "Discord"; checked: root.value("social", "discord", false); onToggled: function(v) { root.update("social", { discord: v }); } }
-              ToggleRow { label: "Matrix"; checked: root.value("social", "matrix", false); onToggled: function(v) { root.update("social", { matrix: v }); } }
-              ToggleRow { label: "Message notifications"; checked: root.value("social", "notifyMessages", true); onToggled: function(v) { root.update("social", { notifyMessages: v }); } }
-              ToggleRow { label: "Call notifications"; checked: root.value("social", "notifyCalls", true); onToggled: function(v) { root.update("social", { notifyCalls: v }); } }
-              ToggleRow { label: "Show previews"; checked: root.value("social", "showPreview", false); onToggled: function(v) { root.update("social", { showPreview: v }); } }
-              Text { textFormat: Text.PlainText; text: "Connectors require an optional local kairos-social-bridge adapter."; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-              Text {
-                textFormat: Text.PlainText
-                text: root.service ? [
-                  "Telegram · " + root.service.socialPlatformStatus("telegram"),
-                  "WhatsApp · " + root.service.socialPlatformStatus("whatsapp"),
-                  "Signal · " + root.service.socialPlatformStatus("signal"),
-                  "Discord · " + root.service.socialPlatformStatus("discord"),
-                  "Matrix · " + root.service.socialPlatformStatus("matrix")
-                ].join("\n") : ""
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-              }
-            }
-          }
-
-          // ---- Email ----
-          ColumnLayout {
-            spacing: Style.space(12)
-            Layout.fillWidth: true
-            visible: root.selectedCategory === "email"
-            CategoryHeader { heading: "Email"; subtitle: root.categorySubtitle("email") }
-            Section {
-              title: "Email"
-              ToggleRow { label: "New-message notifications"; checked: root.value("email", "notifyNew", true); onToggled: function(v) { root.update("email", { notifyNew: v }); } }
-              ToggleRow { label: "Show subject previews"; checked: root.value("email", "showPreview", false); onToggled: function(v) { root.update("email", { showPreview: v }); } }
-              Repeater {
-                model: root.service ? root.service.settings.email.accounts : []
-                delegate: AccountEditor {
-                  required property var modelData
-                  account: modelData
-                  service: root.service
-                }
-              }
-              FlowButton { text: "Add email account"; onClicked: if (root.service) root.service.emailAddAccount() }
-              Text { textFormat: Text.PlainText; text: root.service ? root.service.emailStatusText : "Email uses the system keyring for passwords."; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            }
-          }
-
           // ---- System ----
           ColumnLayout {
             spacing: Style.space(12)
@@ -340,7 +280,6 @@ Item {
             Section {
               title: "Data"
               Text { textFormat: Text.PlainText; text: root.service ? ("State file: " + root.service.stateFilePath) : ""; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
-              Text { textFormat: Text.PlainText; text: "Email passwords are held by the system Secret Service and are not written to this file."; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; Layout.fillWidth: true }
               RowLayout {
                 FlowButton {
                   text: root.confirmingReset ? "Confirm reset" : "Reset data"
@@ -572,87 +511,6 @@ Item {
       var p = String(path || "").trim();
       if (p === "" || p.charAt(0) !== "/") return "";
       try { return "file://" + encodeURI(p); } catch (error) { return "file://" + p; }
-    }
-  }
-
-  component AccountEditor: ColumnLayout {
-    id: editor
-    property var account: null
-    property var service: null
-    spacing: Style.space(5)
-    Layout.fillWidth: true
-
-    Text { textFormat: Text.PlainText; text: editor.account ? editor.account.name : "Email account"; color: Color.popups.text; font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; font.weight: Font.DemiBold; Layout.fillWidth: true }
-    TextRow { label: "Account name"; value: editor.account ? editor.account.name : ""; onCommit: function(v) { editor.patch({ name: v }); } }
-    TextRow { label: "Email address"; value: editor.account ? editor.account.email : ""; onCommit: function(v) { editor.patch({ email: v }); } }
-    TextRow { label: "IMAP host"; value: editor.account ? editor.account.imapHost : ""; onCommit: function(v) { editor.patch({ imapHost: v }); } }
-    NumberRow { label: "IMAP port"; unit: "TLS"; value: editor.account ? editor.account.imapPort : 993; minimum: 1; maximum: 65535; onCommit: function(v) { editor.patch({ imapPort: v }); } }
-    TextRow { label: "SMTP host"; value: editor.account ? editor.account.smtpHost : ""; onCommit: function(v) { editor.patch({ smtpHost: v }); } }
-    NumberRow { label: "SMTP port"; unit: "TLS"; value: editor.account ? editor.account.smtpPort : 587; minimum: 1; maximum: 65535; onCommit: function(v) { editor.patch({ smtpPort: v }); } }
-    TextRow { label: "Username"; value: editor.account ? editor.account.username : ""; onCommit: function(v) { editor.patch({ username: v }); } }
-    SecretRow { account: editor.account; service: editor.service }
-    RowLayout {
-      FlowButton { text: "Remove account"; onClicked: if (editor.service && editor.account) editor.service.emailRemoveAccount(editor.account.id) }
-    }
-
-    function patch(values) {
-      if (editor.service && editor.account) editor.service.emailUpdateAccount(editor.account.id, values);
-    }
-  }
-
-  component SecretRow: ColumnLayout {
-    id: secretRow
-    property var account: null
-    property var service: null
-    spacing: Style.space(4)
-    Layout.fillWidth: true
-    Text { textFormat: Text.PlainText; text: "App password (stored only in the system keyring)"; color: Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.caption; Layout.fillWidth: true }
-    RowLayout {
-      Rectangle {
-        implicitHeight: Style.space(32)
-        radius: Style.cornerRadius
-        color: "transparent"
-        border.color: Color.popups.border
-        border.width: Math.max(1, Style.space(1))
-        Layout.fillWidth: true
-        TextInput {
-          id: secretInput
-          anchors.fill: parent
-          anchors.leftMargin: Style.space(8)
-          anchors.rightMargin: Style.space(8)
-          verticalAlignment: TextInput.AlignVCenter
-          echoMode: TextInput.Password
-          color: Color.popups.text
-          selectionColor: Color.accent
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          maximumLength: 4096
-        }
-      }
-      FlowButton {
-        text: "Save password"
-        enabledButton: !!(secretRow.account && secretRow.service)
-        onClicked: {
-          if (secretRow.service && secretRow.account) {
-            secretRow.service.emailStoreCredential(secretRow.account.id, secretInput.text);
-            secretInput.text = "";
-          }
-        }
-      }
-      FlowButton {
-        text: "Remove password"
-        enabledButton: !!(secretRow.account && secretRow.service)
-        onClicked: if (secretRow.service && secretRow.account) secretRow.service.emailClearCredential(secretRow.account.id)
-      }
-    }
-    Text {
-      textFormat: Text.PlainText
-      text: secretRow.service && secretRow.account ? secretRow.service.emailAccountStatus(secretRow.account.id) : ""
-      color: Color.muted
-      font.family: Style.font.family
-      font.pixelSize: Style.font.caption
-      wrapMode: Text.WordWrap
-      Layout.fillWidth: true
     }
   }
 }

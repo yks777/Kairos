@@ -11,14 +11,13 @@ RowLayout {
   Layout.fillWidth: true
 
   Repeater {
-    model: [
-      { id: "day", label: "Day" },
-      { id: "focus", label: "Focus" },
-      { id: "plan", label: "Plan" },
-      { id: "stats", label: "Stats" },
-      { id: "markets", label: "Markets" },
-      { id: "social", label: "Social" }
-    ]
+   model: [
+     { id: "day", label: "Day" },
+     { id: "focus", label: "Focus" },
+     { id: "plan", label: "Plan" },
+     { id: "stats", label: "Stats" },
+     { id: "markets", label: "Markets" }
+   ]
 
     delegate: Item {
       id: tab

@@ -48,7 +48,7 @@ Panel {
       try { pending = String(root.service.consumePendingView() || ""); } catch (error) {}
     }
     if (view === "") view = pending;
-    if (["day", "focus", "plan", "stats", "markets", "social", "settings"].indexOf(view) !== -1)
+     if (["day", "focus", "plan", "stats", "markets", "settings"].indexOf(view) !== -1)
       root.currentView = view;
     root.controller.show();
     Qt.callLater(function() {
@@ -90,23 +90,21 @@ Panel {
   }
 
   readonly property int cardWidth: {
-    if (root.currentView === "plan") return Style.space(880);
-    if (root.currentView === "markets") return Style.space(640);
-    if (root.currentView === "social") return Style.space(620);
-    if (root.currentView === "day") return Style.space(560);
-    if (root.currentView === "stats") return Style.space(480);
-    if (root.currentView === "settings") return Style.space(620);
-    return Style.space(400);
+     if (root.currentView === "plan") return Style.space(880);
+     if (root.currentView === "markets") return Style.space(640);
+     if (root.currentView === "day") return Style.space(560);
+     if (root.currentView === "stats") return Style.space(480);
+     if (root.currentView === "settings") return Style.space(620);
+     return Style.space(400);
   }
 
   readonly property int contentHeight: {
-    if (root.currentView === "plan") return Style.space(500);
-    if (root.currentView === "markets") return Style.space(520);
-    if (root.currentView === "social") return Style.space(620);
-    if (root.currentView === "day") return Style.space(620);
-    if (root.currentView === "stats") return Style.space(540);
-    if (root.currentView === "settings") return Style.space(560);
-    return Style.space(460);
+     if (root.currentView === "plan") return Style.space(500);
+     if (root.currentView === "markets") return Style.space(520);
+     if (root.currentView === "day") return Style.space(620);
+     if (root.currentView === "stats") return Style.space(540);
+      if (root.currentView === "settings") return Style.space(560);
+     return Style.space(460);
   }
 
   property string currentView: "day"
@@ -170,7 +168,7 @@ Panel {
           visible: root.currentView === "focus"
         }
 
-        PlanView {
+        MatrixView {
           service: root.service
           Layout.fillWidth: true
           Layout.preferredHeight: root.contentHeight
@@ -189,13 +187,6 @@ Panel {
           Layout.fillWidth: true
           Layout.preferredHeight: root.contentHeight
           visible: root.currentView === "markets"
-        }
-
-        SocialView {
-          service: root.service
-          Layout.fillWidth: true
-          Layout.preferredHeight: root.contentHeight
-          visible: root.currentView === "social"
         }
 
         SettingsView {
