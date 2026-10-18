@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "Yuri K. S.",
   "license": "MIT",
-  "description": "Clock, focus timer, tasks, calendar, Obsidian daily notes, stats, markets, social and email for the Omarchy bar.",
+   "description": "Clock, focus timer, tasks, calendar, Obsidian daily notes, stats, markets for the Omarchy bar.",
   "kinds": ["service", "bar-widget", "panel"],
   "keepLoaded": true,
   "entryPoints": {

@@ -9,7 +9,7 @@ import "logic/MarketsModel.js" as MarketsModel
 import "logic/ConverterModel.js" as ConverterModel
 import "logic/Storage.js" as Storage
 import "logic/CalendarModel.js" as CalendarModel
-import "logic/SocialModel.js" as SocialModel
+
 import "connectors"
 import "services"
 
@@ -55,16 +55,12 @@ Item {
   readonly property bool searchBusy: marketsData.searchBusy
   readonly property string searchError: marketsData.searchError
   readonly property string marketsError: marketsData.lastError
-  readonly property string currency: root.settings && root.settings.markets
-    ? String(root.settings.markets.currency || "USD") : "USD"
-  readonly property string socialStatus: socialData.statusText
-  readonly property string socialEmptyMessage: socialData.bridgeAvailable || emailData.accounts.length > 0
-    ? "No unread messages from enabled accounts." : socialData.statusText
-  readonly property string emailStatusText: emailConnector.statusText
-  readonly property string obsidianTestStatus: obsidianData.testStatus
+   readonly property string currency: root.settings && root.settings.markets
+     ? String(root.settings.markets.currency || "USD") : "USD"
+   readonly property string obsidianTestStatus: obsidianData.testStatus
   readonly property string dataStatus: root.dataStatusMessage !== "" ? root.dataStatusMessage
     : root.stateLoaded
-      ? "State is saved automatically. Email secrets use the system Secret Service and are not stored in state.json."
+      ? "State is saved automatically to state.json."
       : "Waiting for the Kairos state file to load."
 
   // ---- Binding invalidation ----
@@ -1055,215 +1051,39 @@ Item {
   }
   function searchSymbols(query) { marketsData.searchSymbols(query); }
 
-  function socialPlatformStatus(platform) {
-    var key = String(platform || "").toLowerCase();
-    var connectors = [telegramConnector, whatsappConnector, signalConnector, discordConnector, matrixConnector];
-    for (var i = 0; i < connectors.length; i++)
-      if (connectors[i].platform === key) return connectors[i].statusText;
-    return "No compatible local adapter is available.";
-  }
 
-  function combinedSocialEvents() {
-    var output = [];
-    var enabled = root.settings && root.settings.social ? root.settings.social : {};
-    var socialEvents = Array.isArray(socialData.events) ? socialData.events : [];
-    for (var i = 0; i < socialEvents.length; i++)
-      if (enabled[socialEvents[i].platform] === true) output.push(socialEvents[i]);
-    var emailEvents = Array.isArray(emailData.events) ? emailData.events : [];
-    for (var j = 0; j < emailEvents.length; j++) output.push(emailEvents[j]);
-    return SocialModel.mergeEvents([output]);
-  }
 
-  function socialAccounts() {
-    var output = [];
-    var enabled = root.settings && root.settings.social ? root.settings.social : {};
-    var localAccounts = Array.isArray(socialData.accounts) ? socialData.accounts : [];
-    for (var i = 0; i < localAccounts.length; i++) {
-      var platform = localAccounts[i].platform;
-      if (enabled[platform] !== true) continue;
-      var localAccount = {};
-      for (var key in localAccounts[i]) if (Object.prototype.hasOwnProperty.call(localAccounts[i], key)) localAccount[key] = localAccounts[i][key];
-      output.push(localAccount);
-    }
-    var mailAccounts = Array.isArray(emailData.accounts) ? emailData.accounts : [];
-    for (var j = 0; j < mailAccounts.length; j++) {
-      var account = mailAccounts[j];
-      output.push({
-        id: account.id,
-        platform: "email",
-        glyph: SocialModel.accountGlyph("email"),
-        name: account.name || account.email || "Email account",
-        accountName: account.name || account.email || "Email account",
-        email: account.email || "",
-        status: emailData.statusForAccount(account.id)
-      });
-    }
-    return output;
-  }
 
-  function socialUnread(accountId) {
-    var now = root.nowMs();
-    var rows = SocialModel.unreadConversations(root.combinedSocialEvents(), accountId, now);
-    for (var i = 0; i < rows.length; i++) {
-      rows[i].glyph = SocialModel.accountGlyph(rows[i].platform);
-      rows[i].timeLabel = SocialModel.timeLabel(rows[i].timestamp, now);
-    }
-    return rows;
-  }
 
-  function socialRecentCalls(accountId) {
-    var now = root.nowMs();
-    var rows = SocialModel.recentCalls(root.combinedSocialEvents(), accountId, now);
-    var output = [];
-    for (var i = 0; i < rows.length; i++) {
-      var event = rows[i];
-      var state = event.callState;
-      output.push({
-        id: event.id,
-        accountId: event.accountId,
-        platform: event.platform,
-        glyph: SocialModel.callGlyph(state),
-        name: event.chat.name || event.sender.name,
-        accountName: event.accountName,
-        kind: state,
-        kindLabel: state === "missed" ? "Missed call" : state === "outgoing" ? "Outgoing call" : "Incoming call",
-        timeLabel: SocialModel.timeLabel(event.timestamp, now)
-      });
-    }
-    return output;
-  }
 
-  function socialRinging() {
-    var event = SocialModel.ringingCall(root.combinedSocialEvents());
-    if (!event) return null;
-    return {
-      id: event.id,
-      callId: event.id,
-      accountId: event.accountId,
-      platform: event.platform,
-      name: event.chat.name || event.sender.name,
-      accountName: event.accountName,
-      timestamp: event.timestamp
-    };
-  }
 
-  function socialThread(accountId, chatId) {
-    var rows = SocialModel.threadEvents(root.combinedSocialEvents(), accountId, chatId);
-    var output = [];
-    for (var i = 0; i < rows.length; i++) {
-      var event = rows[i];
-      output.push({
-        id: event.id,
-        messageId: event.messageId,
-        uid: event.uid,
-        platform: event.platform,
-        accountId: event.accountId,
-        chatId: event.chat.id,
-        subject: event.subject,
-        sender: event.sender.name,
-        senderName: event.sender.name,
-        from: event.from || event.sender.name,
-        fromEmail: event.sender.email,
-        to: event.to,
-        cc: event.cc,
-        body: event.body,
-        timestamp: event.timestamp,
-        timeLabel: SocialModel.timeLabel(event.timestamp, root.nowMs()),
-        unread: event.chat.unread,
-        hasAttachments: event.hasAttachments,
-        attachmentNames: event.attachmentNames,
-        inReplyTo: event.inReplyTo,
-        references: event.references,
-        threadId: event.chat.id,
-        accountName: event.accountName
-      });
-    }
-    return output;
-  }
 
-  function socialMarkRead(accountId, chatId, platform) {
-    if (String(platform || "") === "email") return emailData.markThreadRead(accountId, chatId);
-    return socialData.markRead(String(platform || ""), String(accountId || ""), String(chatId || ""));
-  }
 
-  function socialSend(platform, accountId, chatId, text) {
-    if (String(platform || "") === "email") return false;
-    return socialData.send(String(platform || ""), String(accountId || ""), String(chatId || ""), String(text || ""));
-  }
 
-  function socialAnswerCall(call) {
-    return call ? socialData.callAction("answer", call.platform, call.id || call.callId) : false;
-  }
 
-  function socialDeclineCall(call) {
-    return call ? socialData.callAction("decline", call.platform, call.id || call.callId) : false;
-  }
 
-  function emailAccountById(accountId) { return emailData.accountById(accountId); }
-  function emailAccountStatus(accountId) { return emailData.statusForAccount(accountId); }
-  function emailSend(accountId, payload) { return emailData.send(accountId, payload); }
-  function emailStoreCredential(accountId, secret) { return emailData.storeCredential(accountId, secret); }
-  function emailClearCredential(accountId) { return emailData.clearCredential(accountId); }
-  function emailRefresh() { return emailData.restartWatcher(); }
 
-  function emailAddAccount(initialValues) {
-    var accounts = root.settings && root.settings.email && Array.isArray(root.settings.email.accounts)
-      ? root.settings.email.accounts.slice() : [];
-    if (accounts.length >= 32) return "";
-    var supplied = initialValues && typeof initialValues === "object" ? initialValues : {};
-    var account = {
-      id: Model.uid("mail"),
-      name: String(supplied.name || "Email account"),
-      email: String(supplied.email || ""),
-      username: String(supplied.username || ""),
-      imapHost: String(supplied.imapHost || ""),
-      imapPort: Number(supplied.imapPort) || 993,
-      smtpHost: String(supplied.smtpHost || ""),
-      smtpPort: Number(supplied.smtpPort) || 587,
-      tls: true
-    };
-    accounts.push(account);
-    return root.updateSettings("email", { accounts: accounts }) ? account.id : "";
-  }
 
-  function emailUpdateAccount(accountId, patch) {
-    var accounts = root.settings && root.settings.email && Array.isArray(root.settings.email.accounts)
-      ? root.settings.email.accounts.slice() : [];
-    var id = String(accountId || "");
-    var allowed = ["name", "email", "username", "imapHost", "imapPort", "smtpHost", "smtpPort"];
-    var changed = false;
-    for (var i = 0; i < accounts.length; i++) {
-      if (accounts[i].id !== id) continue;
-      var nextAccount = {};
-      for (var key in accounts[i]) if (Object.prototype.hasOwnProperty.call(accounts[i], key)) nextAccount[key] = accounts[i][key];
-      for (var j = 0; j < allowed.length; j++) {
-        var field = allowed[j];
-        if (patch && Object.prototype.hasOwnProperty.call(patch, field)) nextAccount[field] = patch[field];
-      }
-      accounts[i] = nextAccount;
-      changed = true;
-      break;
-    }
-    return changed && root.updateSettings("email", { accounts: accounts });
-  }
 
-  function emailRemoveAccount(accountId) {
-    var id = String(accountId || "");
-    var accounts = root.settings && root.settings.email && Array.isArray(root.settings.email.accounts)
-      ? root.settings.email.accounts.slice() : [];
-    var nextAccounts = accounts.filter(function(account) { return account.id !== id; });
-    if (nextAccounts.length === accounts.length) return false;
-    if (!root.updateSettings("email", { accounts: nextAccounts })) return false;
-    emailData.clearAccount(id);
-    return true;
-  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   function obsidianTestConnection() { obsidianData.testConnection(); }
 
   function resetAll() {
-    var existingAccounts = root.settings && root.settings.email && Array.isArray(root.settings.email.accounts)
-      ? root.settings.email.accounts.slice() : [];
-    for (var i = 0; i < existingAccounts.length; i++) emailData.clearCredential(existingAccounts[i].id);
     root.persistenceBlocked = false;
     var blank = Model.blankState();
     root.settings = blank.settings;
@@ -1276,7 +1096,7 @@ Item {
     root.activeTaskSource = blank.activeTaskSource;
     root.activeTaskText = "";
     root.timer = blank.timer;
-    root.dataStatusMessage = "Kairos data reset. Email keyring removal was requested; completion depends on Secret Service availability.";
+     root.dataStatusMessage = "Kairos data reset.";
     root.bump();
     root.saveSoon();
     return true;
@@ -1378,22 +1198,7 @@ Item {
     service: root
   }
 
-  SocialService {
-    id: socialData
-    service: root
-  }
 
-  EmailService {
-    id: emailData
-    service: root
-  }
-
-  TelegramConnector { id: telegramConnector; service: socialData }
-  WhatsAppConnector { id: whatsappConnector; service: socialData }
-  SignalConnector { id: signalConnector; service: socialData }
-  DiscordConnector { id: discordConnector; service: socialData }
-  MatrixConnector { id: matrixConnector; service: socialData }
-  EmailConnector { id: emailConnector; service: emailData }
 
   // ---- Persistence ----
   FileView {
@@ -1642,16 +1447,12 @@ Item {
     function plan(): string { root.openView("plan"); return "ok"; }
     function stats(): string { root.openView("stats"); return "ok"; }
     function markets(): string { root.openView("markets"); return "ok"; }
-    function social(): string { root.openView("social"); return "ok"; }
-    function email(): string { root.openView("social"); return "ok"; }
+
+
     function settings(): string { root.openView("settings"); return "ok"; }
-    function refreshSocial(): string { socialData.refresh(); return "ok"; }
-    function refreshEmail(): string { emailData.restartWatcher(); return "ok"; }
-    function sendEmail(accountId: string, payloadJson: string): string {
-      var payload = null;
-      try { payload = JSON.parse(payloadJson); } catch (error) { return "invalid-payload"; }
-      return emailData.send(accountId, payload) ? "queued" : "not-queued";
-    }
+
+
+
     function start(): string { root.startTimer(); return "ok"; }
     function startFlowtime(): string { root.startFlowtime(); return "ok"; }
     function pause(): string { root.pauseTimer(); return "ok"; }
@@ -1687,9 +1488,8 @@ Item {
           syncing: calendarData.syncing,
           syncError: calendarData.syncError
         },
-        obsidian: { enabled: obsidianData.obsidianEnabled, noteLoaded: obsidianData.noteLoaded, error: obsidianData.lastError },
-        social: { bridgeAvailable: socialData.bridgeAvailable, accounts: socialData.accounts.length, events: socialData.events.length, status: socialData.statusText },
-        email: { available: emailData.available, accounts: emailData.accounts.length, status: emailData.statusText },
+         obsidian: { enabled: obsidianData.obsidianEnabled, noteLoaded: obsidianData.noteLoaded, error: obsidianData.lastError },
+
         revision: root.revision,
         stateLoaded: root.stateLoaded
       });

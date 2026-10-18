@@ -56,10 +56,16 @@ Item {
       root.service.calendarLoadMonth(root.displayedYear, root.displayedMonth);
   }
 
-  function goToday() {
-    var now = new Date();
-    root.selectDay(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0));
-  }
+   function goToday() {
+     var now = new Date();
+     var today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+     root.selectedDate = today;
+     root.displayedYear = today.getFullYear();
+     root.displayedMonth = today.getMonth();
+     if (root.service && typeof root.service.calendarLoadMonth === "function")
+       root.service.calendarLoadMonth(root.displayedYear, root.displayedMonth);
+     monthGrid.flashSelected();
+   }
 
   function beginAddTask() {
     root.addingTask = true;

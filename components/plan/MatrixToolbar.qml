@@ -8,6 +8,7 @@ RowLayout {
 
   property var service: null
   signal openCompleted()
+  signal addTaskRequested()
 
   spacing: Style.space(8)
   Layout.fillWidth: true
@@ -29,6 +30,12 @@ RowLayout {
   }
 
   Item { Layout.fillWidth: true }
+
+  FlowButton {
+    text: "+"
+    tip: "Add task to Q1"
+    onClicked: root.addTaskRequested()
+  }
 
   FlowButton {
     text: "Completed (" + root.doneCount + ")"

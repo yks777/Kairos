@@ -6,6 +6,7 @@ Rectangle {
   property string text: ""
   property bool primary: false
   property bool enabledButton: true
+  property string tip: ""
   signal clicked()
 
   implicitWidth: Math.max(Style.space(64), label.implicitWidth + Style.space(24))

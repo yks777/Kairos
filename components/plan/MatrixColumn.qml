@@ -24,8 +24,7 @@ ColumnLayout {
 
   readonly property var columnTasks: {
     if (!root.service) return [];
-    var revision = root.service.revision;
-    revision;
+    root.service.revision;
     return root.service.tasksForColumn(root.columnId);
   }
 
@@ -137,18 +136,18 @@ ColumnLayout {
       onToggleMenu: root.cardMenu(String(modelData.id))
       onStartFocus: {
         if (!root.service) return;
-        var timer = root.service.timer;
+        root.service.setActiveTask(modelData.id);
         var focus = root.service.settings && root.service.settings.focus ? root.service.settings.focus : {};
         var action = focus.focusAction === "flowtime" || focus.action === "flowtime" ? "flowtime" : "pomodoro";
-        var active = timer.phase === "running" || timer.phase === "paused" || timer.phase === "break";
-        if (active && timer.taskId === modelData.id && timer.mode === action) {
+        if (root.service.timer.phase === "running" || root.service.timer.phase === "paused" || root.service.timer.phase === "break") {
+          if (root.service.timer.taskId === modelData.id && root.service.timer.mode === action) {
+            return;
+          }
+          root.service.stopTimer();
           root.service.setActiveTask(modelData.id);
-          return;
+          if (action === "flowtime") root.service.startFlowtime(modelData.id);
+          else root.service.startPomodoro(modelData.id);
         }
-        if (active) root.service.stopTimer();
-        root.service.setActiveTask(modelData.id);
-        if (action === "flowtime") root.service.startFlowtime(modelData.id);
-        else root.service.startPomodoro(modelData.id);
       }
       onDone: {
         if (root.service) root.service.completeTask(modelData.id);
@@ -159,8 +158,8 @@ ColumnLayout {
       onRemove: {
         if (root.service) root.service.deleteTask(modelData.id);
       }
-      onDragStarted: root.listFrozen = true
-      onDragFinished: root.listFrozen = false
+      onDragStarted: root.listFrozen = true;
+      onDragFinished: root.listFrozen = false;
     }
 
     Text {
@@ -183,6 +182,10 @@ ColumnLayout {
       root.editorOpen = false;
     }
     onCancelled: root.editorOpen = false
+  }
+
+  onEditorOpenChanged: {
+    if (root.editorOpen) Qt.callLater(function() { editor.focusInput(); });
   }
 
   FlowButton {

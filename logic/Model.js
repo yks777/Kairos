@@ -54,6 +54,7 @@ function defaultSettings() {
       watchlist: { symbols: ["AAPL", "NVDA", "BTC"], coinIds: {} }
     },
     stats: { streakMinSec: 900 },
+    // Kept for state backward-compat (UI removed, but old state files may contain these).
     social: {
       telegram: false,
       whatsapp: false,
