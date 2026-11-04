@@ -1,0 +1,9 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Kilo local config
+.kilo/
+
+# Git internals (opcional, reforço)
+.git/
