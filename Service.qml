@@ -1158,14 +1158,20 @@ Item {
 
   function converterStatus(mode) {
     if (mode === "units") return "Local conversion · no network needed";
-    if (mode === "crypto") {
-      if (converterData.cryptoError !== "" && converterData.cryptoFetchedAt === 0) return converterData.cryptoError;
-      var cryptoAge = MarketsModel.ageLabel(converterData.cryptoFetchedAt, root.nowMs());
-      return "Crypto rates " + cryptoAge + (converterData.cryptoStale ? " · cached" : "");
+    var fiatPart = "";
+    var cryptoPart = "";
+    if (converterData.ratesError !== "" && converterData.ratesFetchedAt === 0) fiatPart = converterData.ratesError;
+    else {
+      var ratesAge = MarketsModel.ageLabel(converterData.ratesFetchedAt, root.nowMs());
+      fiatPart = "Fiat rates " + ratesAge + (converterData.ratesStale ? " · cached" : "");
     }
-    if (converterData.ratesError !== "" && converterData.ratesFetchedAt === 0) return converterData.ratesError;
-    var ratesAge = MarketsModel.ageLabel(converterData.ratesFetchedAt, root.nowMs());
-    return "Fiat rates " + ratesAge + (converterData.ratesStale ? " · cached" : "");
+    if (converterData.cryptoError !== "" && converterData.cryptoFetchedAt === 0) cryptoPart = converterData.cryptoError;
+    else {
+      var cryptoAge = MarketsModel.ageLabel(converterData.cryptoFetchedAt, root.nowMs());
+      cryptoPart = "Crypto prices " + cryptoAge + (converterData.cryptoStale ? " · cached" : "");
+    }
+    var parts = [fiatPart, cryptoPart].filter(function(p) { return p !== ""; });
+    return parts.join(" · ");
   }
 
   function convertCurrency(amount, from, to) {

@@ -25,7 +25,6 @@ Item {
         model: [
           { id: "watchlist", label: "Watchlist" },
           { id: "convert", label: "Convert" },
-          { id: "crypto", label: "Crypto" },
           { id: "units", label: "Units" }
         ]
         delegate: Chip {
@@ -64,16 +63,7 @@ Item {
 
         PairEditor {
           service: root.service
-          mode: "fiat"
           visible: root.subTab === "convert"
-          Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(390)
-        }
-
-        PairEditor {
-          service: root.service
-          mode: "crypto"
-          visible: root.subTab === "crypto"
           Layout.fillWidth: true
           Layout.preferredHeight: Style.space(390)
         }

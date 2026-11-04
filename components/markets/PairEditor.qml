@@ -22,27 +22,26 @@ Item {
   implicitHeight: Style.space(400)
 
   function optionsForMode() {
-    if (root.mode === "crypto") {
-      return ConverterModel.CRYPTO_LIST.map(function(item) {
-        return { id: item.symbol, label: item.name + " (" + item.symbol + ")" };
-      });
-    }
     if (root.mode === "units") {
       var group = ConverterModel.UNIT_CATEGORIES[root.category];
       return group && Array.isArray(group.units) ? group.units : [];
     }
-    return ConverterModel.MAJOR_CURRENCIES.map(function(code) {
-      return { id: code, label: code + " — " + (ConverterModel.CURRENCY_NAMES[code] || code) };
+    var options = [];
+    ConverterModel.MAJOR_CURRENCIES.forEach(function(code) {
+      options.push({ id: code, label: code + " — " + (ConverterModel.CURRENCY_NAMES[code] || code), kind: "fiat" });
     });
+    ConverterModel.CRYPTO_LIST.forEach(function(item) {
+      options.push({ id: item.symbol, label: item.symbol + " — " + item.name + " (cripto)", kind: "crypto" });
+    });
+    return options;
   }
 
   function defaultPair() {
-    if (root.mode === "crypto") return ["BTC", "ETH"];
     if (root.mode === "units") {
       var units = ConverterModel.UNIT_CATEGORIES[root.category].units;
       return [units[0].id, units.length > 1 ? units[1].id : units[0].id];
     }
-    return ["USD", "BRL"];
+    return ["BTC", "USD"];
   }
 
   function setModeDefaults() {
@@ -109,7 +108,7 @@ Item {
 
     Text {
       textFormat: Text.PlainText
-      text: root.mode === "units" ? "UNIT CONVERTER" : root.mode === "crypto" ? "CRYPTO CONVERTER" : "CURRENCY CONVERTER"
+      text: root.mode === "units" ? "UNIT CONVERTER" : "CONVERTER"
     color: Color.muted
     font.family: Style.font.family
     font.pixelSize: Style.font.caption
