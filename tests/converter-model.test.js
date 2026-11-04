@@ -27,6 +27,25 @@ test("crypto prices can be converted through the same USD pivot", () => {
   assert.equal(ConverterModel.convertCross(1, "BTC", "ETH", {}, prices), 20);
 });
 
+test("mixed crypto-to-fiat conversion uses USD as pivot", () => {
+  const rates = { USD: 1, EUR: 0.92, BRL: 5.2 };
+  const prices = { bitcoin: 50000, ethereum: 2500 };
+  // 1 BTC = 50000 USD; 50000 USD * 5.2 BRL/USD = 260000 BRL
+  assert.ok(Math.abs(ConverterModel.convertCross(1, "BTC", "BRL", rates, prices) - 260000) < 1e-6);
+  // 1 ETH = 2500 USD; 2500 USD * 0.92 EUR/USD = 2300 EUR
+  assert.ok(Math.abs(ConverterModel.convertCross(1, "ETH", "EUR", rates, prices) - 2300) < 1e-6);
+});
+
+test("mixed fiat-to-crypto conversion uses USD as pivot", () => {
+  const rates = { USD: 1, EUR: 0.92, BRL: 5.2 };
+  const prices = { bitcoin: 50000 };
+  // 260000 BRL / 5.2 = 50000 USD; 50000 USD / 50000 = 1 BTC
+  assert.ok(Math.abs(ConverterModel.convertCross(260000, "BRL", "BTC", rates, prices) - 1) < 1e-6);
+  // 100 EUR / 0.92 = 108.695... USD; / 50000 = 0.0021739... BTC
+  const expected = (100 / 0.92) / 50000;
+  assert.ok(Math.abs(ConverterModel.convertCross(100, "EUR", "BTC", rates, prices) - expected) < 1e-10);
+});
+
 test("amount parsing accepts Brazilian and US grouping conventions", () => {
   assert.equal(NumberFormat.parseAmount("1.234,56"), 1234.56);
   assert.equal(NumberFormat.parseAmount("1,234.56"), 1234.56);
